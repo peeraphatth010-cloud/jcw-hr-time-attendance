@@ -170,7 +170,6 @@ export function classifyLeaveType(
 
 /**
  * ตรวจสอบว่าเป็นรายการที่ HR บันทึกยอดสะสมย้อนหลังหรือทดสอบระบบหรือไม่
- * (เช่น เหตุผล "บันทึกเก่า", "บันทึกลาเก่า", "บันทึกลาเดิม", "บันทึกการลาล่าสุด", "บันทึกใหม่", "ทดสอบ", "ทด", "กดก")
  */
 export function detectHistoricalCarryoverOrTest(
   reason: string,
@@ -179,32 +178,43 @@ export function detectHistoricalCarryoverOrTest(
 ): boolean {
   const r = (reason || '').trim();
   const n = (note || '').trim();
-  const exactCarryoverReasons = [
+  const carryoverKeywords = [
     'บันทึกเก่า',
     'บันทึกลาเก่า',
     'บันทึกลาเดิม',
+    'บันทึกการลาเก่า',
     'บันทึกการลาล่าสุด',
+    'บันทึกลาล่าสุด',
+    'บันทึกการลา',
+    'บันทึกเดิม',
     'บันทึกใหม่',
+    'สิทธิคงเหลือล่าสุด',
     'ทดสอบ',
     'ทด',
     'กดก',
   ];
-  if (exactCarryoverReasons.includes(r)) {
+  if (r === 'บันทึก') return true;
+  if (carryoverKeywords.some((kw) => r.includes(kw) || n.includes(kw))) {
     return true;
   }
-  if (n.includes('เทสระบบ') || r.includes('เทสระบบ')) {
-    return true;
-  }
-  // ถ้ายอดชั่วโมงสูงผิดปกติเกิน 40 ชม. ในใบเดียวและมีคำว่า "บันทึก"
-  if (hours >= 40 && r.includes('บันทึก')) {
+  if (hours >= 32 && r.includes('บันทึก')) {
     return true;
   }
   return false;
 }
 
+function stripThaiPrefix(name: string): string {
+  return (name || '')
+    .replace(/^(นางสาว|นาง|นาย|น\.ส\.|ด\.ช\.|ด\.ญ\.)\s*/g, '')
+    .trim();
+}
+
 /**
  * แปลงข้อความ CSV ของชีต "การตอบแบบฟอร์ม 1" (แบบฟอร์มลาออนไลน์) เป็น LeaveFormRecord[]
- * คอลัมน์ I (index 8) และ คอลัมน์ J (index 9) รองรับทั้ง DD/MM/YYYY และ YYYY-MM-DD
+ * โครงสร้างคอลัมน์จริงของ JCW:
+ * 0: ประทับเวลา, 1: ชื่อ, 2: นามสกุล, 3: รหัสพนักงาน, 4: วันเริ่มงาน, 5: แผนก/ฝ่าย, 6: ตำแหน่ง,
+ * 7: ประเภทการลา, 8: ลาตั้งแต่วันที่ (Col I), 9: ถึงวันที่ (Col J), 10: ระบุชั่วโมงการลา,
+ * 11: เหตุผลการลา, 12: สถานะการอนุมัติ, 13: วันเวลาที่บันทึกผล, 14: จำนวนวันที่ลา (คำนวณ)
  */
 export function parseLeaveFormCsvText(csvText: string): LeaveFormRecord[] {
   const lines = csvText.split(/\r?\n/);
@@ -222,6 +232,7 @@ export function parseLeaveFormCsvText(csvText: string): LeaveFormRecord[] {
     // ข้ามบรรทัดหัวตาราง
     if (
       firstCol === 'ประทับเวลา' ||
+      secondCol === 'ชื่อ' ||
       secondCol === 'ชื่อ-นามสกุล' ||
       (!firstCol && !secondCol)
     ) {
@@ -232,21 +243,38 @@ export function parseLeaveFormCsvText(csvText: string): LeaveFormRecord[] {
     const endDate = normalizeDateStr(cols[9], 'LEAVE_DMY') || startDate;
     if (!startDate) continue;
 
+    const firstNameClean = stripThaiPrefix(cols[1] || '');
+    const lastNameClean = (cols[2] || '').trim();
+    const fullName = `${firstNameClean} ${lastNameClean}`.trim();
+
     const hours = parseLeaveHours(cols[10]);
     const days = Number((hours / 8).toFixed(4));
-    const reason = String(cols[7] || '').trim();
-    const note = String(cols[14] || '').trim();
-    const { leaveType, isUnpaidLeave } = classifyLeaveType(String(cols[6] || ''), reason, note);
-    const isHistoricalCarryover = detectHistoricalCarryoverOrTest(reason, note, hours);
+    const rawLeaveType = String(cols[7] || '').trim();
+    const reason = String(cols[11] || '').trim();
+    const status = String(cols[12] || 'รออนุมัติ').trim();
+    const approvedDate =
+      normalizeDateStr(cols[13], 'LEAVE_DMY') || String(cols[13] || '').trim();
+    const note = '';
+
+    const { leaveType, isUnpaidLeave } = classifyLeaveType(
+      rawLeaveType,
+      reason,
+      note
+    );
+    const isHistoricalCarryover = detectHistoricalCarryoverOrTest(
+      reason,
+      note,
+      hours
+    );
 
     seq++;
     records.push({
       id: `leave-${seq}-${startDate}`,
       timestamp: firstCol,
-      fullName: secondCol,
-      nickname: String(cols[2] || '').trim(),
+      fullName,
+      nickname: firstNameClean,
       empCode: String(cols[3] || '').trim(),
-      position: String(cols[4] || '').trim(),
+      position: String(cols[6] || '').trim(),
       department: String(cols[5] || '').trim(),
       leaveType,
       reason,
@@ -254,9 +282,9 @@ export function parseLeaveFormCsvText(csvText: string): LeaveFormRecord[] {
       endDate,
       hours,
       days,
-      attachmentUrl: String(cols[11] || '').trim(),
-      status: String(cols[12] || 'รออนุมัติ').trim(),
-      approvedDate: normalizeDateStr(cols[13], 'LEAVE_DMY') || String(cols[13] || '').trim(),
+      attachmentUrl: '',
+      status,
+      approvedDate,
       note,
       isUnpaidLeave,
       isHistoricalCarryover,
@@ -267,7 +295,13 @@ export function parseLeaveFormCsvText(csvText: string): LeaveFormRecord[] {
 }
 
 /**
- * แปลงข้อความ CSV ของชีต "สิทธิคงเหลือ" เป็น EmployeeQuotaRecord[]
+ * แปลงข้อความ CSV ของชีต "สิทธิคงเหลือ" (ข้อมูลพนักงาน) เป็น EmployeeQuotaRecord[]
+ * โครงสร้างคอลัมน์จริงของ JCW:
+ * 0: รหัสพนักงาน, 1: คำนำหน้า, 2: ชื่อ, 3: นามสกุล, 4: แผนก/ฝ่าย, 5: ตำแหน่ง,
+ * 6: สิทธิป่วย, 7: ใช้ไปป่วย, 8: คงเหลือป่วย,
+ * 9: สิทธิกิจ, 10: ใช้ไปกิจ, 11: คงเหลือกิจ,
+ * 12: สิทธิพักร้อน, 13: ใช้ไปพักร้อน, 14: คงเหลือพักร้อน,
+ * 15: สิทธิอื่นๆ, 16: ใช้ไปอื่นๆ, 17: คงเหลืออื่นๆ, 18: อีเมล, 19: ID บุคคล
  */
 export function parseQuotaCsvText(csvText: string): EmployeeQuotaRecord[] {
   const lines = csvText.split(/\r?\n/);
@@ -278,12 +312,11 @@ export function parseQuotaCsvText(csvText: string): EmployeeQuotaRecord[] {
     if (!rawLine) continue;
     const cols = parseCsvLine(rawLine);
     const empCode = String(cols[0] || '').trim();
-    const fullName = String(cols[1] || '').trim();
+    const firstName = stripThaiPrefix(String(cols[2] || '').trim());
+    const lastName = String(cols[3] || '').trim();
 
-    // ข้ามหัวตารางหรือบรรทัดว่าง
     if (
       !empCode ||
-      !fullName ||
       empCode.includes('ข้อมูลพนักงาน') ||
       empCode === 'รหัสพนักงาน' ||
       empCode.includes('ตารางข้อมูล')
@@ -291,25 +324,31 @@ export function parseQuotaCsvText(csvText: string): EmployeeQuotaRecord[] {
       continue;
     }
 
+    const fullName =
+      firstName && lastName
+        ? `${firstName} ${lastName}`.trim()
+        : stripThaiPrefix(String(cols[1] || '').trim());
+    if (!fullName) continue;
+
     const num = (idx: number) => parseOptionalNumber(cols[idx]) ?? 0;
 
     quotas.push({
       empCode,
       fullName,
-      nickname: String(cols[2] || '').trim(),
-      department: String(cols[3] || '').trim(),
-      sickQuotaDays: num(4),
-      personalQuotaDays: num(5),
-      vacationQuotaDays: num(6),
-      otherQuotaDays: num(7),
-      sickUsedDays: num(8),
-      personalUsedDays: num(9),
-      vacationUsedDays: num(10),
-      otherUsedDays: num(11),
-      sickRemainingDays: num(12),
-      personalRemainingDays: num(13),
+      nickname: firstName || fullName,
+      department: String(cols[4] || '').trim(),
+      sickQuotaDays: num(6),
+      sickUsedDays: num(7),
+      sickRemainingDays: num(8),
+      personalQuotaDays: num(9),
+      personalUsedDays: num(10),
+      personalRemainingDays: num(11),
+      vacationQuotaDays: num(12),
+      vacationUsedDays: num(13),
       vacationRemainingDays: num(14),
-      otherRemainingDays: num(15),
+      otherQuotaDays: num(15),
+      otherUsedDays: num(16),
+      otherRemainingDays: num(17),
     });
   }
 

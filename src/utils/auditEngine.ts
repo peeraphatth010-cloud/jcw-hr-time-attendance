@@ -66,17 +66,17 @@ export function resolveEmployeeFromScan(
 
   // กรณีพิเศษ: "Fah" ในชีต 10 มีทั้ง ID 24 (มีข้อมูลสแกนจริง) และ ID 27 (ว่างทั้งหมด) ให้รวมเป็น นันทวัน ดีชื่น (Fah)
   if (sNameLower === 'fah') {
-    const fah = mappings.find((m) => m.scannerName.toLowerCase() === 'fah');
+    const fah = mappings.find((m) => (m.scannerName || '').toLowerCase() === 'fah');
     if (fah) {
       return {
-        empKey: fah.empCode,
-        empCode: fah.empCode,
-        personId: fah.personId,
-        scannerName: fah.scannerName,
-        fullName: fah.fullName,
-        nickname: fah.nickname,
-        department: fah.department,
-        isSales: fah.department.includes('ขาย'),
+        empKey: fah.empCode || '010969001',
+        empCode: fah.empCode || '010969001',
+        personId: fah.personId || '24',
+        scannerName: fah.scannerName || 'Fah',
+        fullName: fah.fullName || 'นันทวัน ดีชื่น',
+        nickname: fah.nickname || 'Fah',
+        department: fah.department || 'ฝ่ายขาย',
+        isSales: (fah.department || 'ฝ่ายขาย').includes('ขาย'),
         isMappedOfficial: true,
       };
     }
@@ -86,19 +86,19 @@ export function resolveEmployeeFromScan(
   const exactMatch = mappings.find(
     (m) =>
       m.personId === pid &&
-      (m.scannerName.toLowerCase() === sNameLower ||
-        m.nickname.toLowerCase() === sNameLower)
+      ((m.scannerName || '').toLowerCase() === sNameLower ||
+        (m.nickname || '').toLowerCase() === sNameLower)
   );
   if (exactMatch) {
     return {
-      empKey: exactMatch.empCode,
-      empCode: exactMatch.empCode,
-      personId: exactMatch.personId,
-      scannerName: exactMatch.scannerName,
-      fullName: exactMatch.fullName,
-      nickname: exactMatch.nickname,
-      department: exactMatch.department,
-      isSales: exactMatch.department.includes('ขาย'),
+      empKey: exactMatch.empCode || exactMatch.personId,
+      empCode: exactMatch.empCode || exactMatch.personId,
+      personId: exactMatch.personId || '-',
+      scannerName: exactMatch.scannerName || sName,
+      fullName: exactMatch.fullName || sName,
+      nickname: exactMatch.nickname || sName,
+      department: exactMatch.department || 'ฝ่ายแอดมิน',
+      isSales: (exactMatch.department || '').includes('ขาย'),
       isMappedOfficial: true,
     };
   }
@@ -106,19 +106,21 @@ export function resolveEmployeeFromScan(
   // 2. จับคู่ด้วยชื่อในเครื่องสแกนนิ้ว (scannerName)
   const nameMatch = mappings.find(
     (m) =>
-      m.scannerName.toLowerCase() === sNameLower ||
-      (sNameLower.length > 2 && m.scannerName.toLowerCase().startsWith(sNameLower))
+      (m.scannerName || '').toLowerCase() === sNameLower ||
+      (sNameLower.length > 2 &&
+        Boolean(m.scannerName) &&
+        (m.scannerName || '').toLowerCase().startsWith(sNameLower))
   );
   if (nameMatch) {
     return {
-      empKey: nameMatch.empCode,
-      empCode: nameMatch.empCode,
-      personId: nameMatch.personId,
-      scannerName: nameMatch.scannerName,
-      fullName: nameMatch.fullName,
-      nickname: nameMatch.nickname,
-      department: nameMatch.department,
-      isSales: nameMatch.department.includes('ขาย'),
+      empKey: nameMatch.empCode || nameMatch.personId,
+      empCode: nameMatch.empCode || nameMatch.personId,
+      personId: nameMatch.personId || '-',
+      scannerName: nameMatch.scannerName || sName,
+      fullName: nameMatch.fullName || sName,
+      nickname: nameMatch.nickname || sName,
+      department: nameMatch.department || 'ฝ่ายแอดมิน',
+      isSales: (nameMatch.department || '').includes('ขาย'),
       isMappedOfficial: true,
     };
   }
@@ -129,14 +131,14 @@ export function resolveEmployeeFromScan(
     // ป้องกัน Sean (ID 24 เดือน เม.ย.-พ.ค.) ชนกับ Fah (ID 24 เดือน ก.ย.-ต.ค.)
     if (idMatch && !(pid === '24' && sNameLower === 'sean')) {
       return {
-        empKey: idMatch.empCode,
-        empCode: idMatch.empCode,
-        personId: idMatch.personId,
-        scannerName: sName || idMatch.scannerName,
-        fullName: idMatch.fullName,
-        nickname: idMatch.nickname,
-        department: idMatch.department,
-        isSales: idMatch.department.includes('ขาย'),
+        empKey: idMatch.empCode || idMatch.personId,
+        empCode: idMatch.empCode || idMatch.personId,
+        personId: idMatch.personId || '-',
+        scannerName: sName || idMatch.scannerName || '-',
+        fullName: idMatch.fullName || sName,
+        nickname: idMatch.nickname || sName,
+        department: idMatch.department || 'ฝ่ายแอดมิน',
+        isSales: (idMatch.department || '').includes('ขาย'),
         isMappedOfficial: true,
       };
     }
@@ -175,9 +177,9 @@ export function resolveEmployeeFromLeave(
   if (!matched && fName) {
     matched = mappings.find(
       (m) =>
-        m.fullName.replace(/\s+/g, '') === fName.replace(/\s+/g, '') ||
-        m.fullName.includes(fName) ||
-        fName.includes(m.fullName)
+        (m.fullName || '').replace(/\s+/g, '') === fName.replace(/\s+/g, '') ||
+        (m.fullName || '').includes(fName) ||
+        fName.includes(m.fullName || '')
     );
   }
 
@@ -185,21 +187,21 @@ export function resolveEmployeeFromLeave(
   if (!matched && nick) {
     matched = mappings.find(
       (m) =>
-        m.nickname.toLowerCase() === nick ||
-        m.scannerName.toLowerCase() === nick
+        (m.nickname || '').toLowerCase() === nick ||
+        (m.scannerName || '').toLowerCase() === nick
     );
   }
 
   if (matched) {
     return {
-      empKey: matched.empCode,
-      empCode: matched.empCode,
-      personId: matched.personId,
-      scannerName: matched.scannerName,
-      fullName: matched.fullName,
-      nickname: matched.nickname,
-      department: matched.department,
-      isSales: matched.department.includes('ขาย'),
+      empKey: matched.empCode || matched.personId,
+      empCode: matched.empCode || matched.personId,
+      personId: matched.personId || '-',
+      scannerName: matched.scannerName || matched.fullName,
+      fullName: matched.fullName || fName,
+      nickname: matched.nickname || '-',
+      department: matched.department || leave.department || 'ฝ่ายแอดมิน',
+      isSales: (matched.department || leave.department || '').includes('ขาย'),
       isMappedOfficial: true,
     };
   }
@@ -297,15 +299,16 @@ export function runMonthlyAttendanceAudit(params: {
 
   // ใส่พนักงานตามตารางผูก ID หลักที่มีความเคลื่อนไหวในเดือนนี้ หรือทั้งหมดในผังบริษัท
   for (const m of employeeMappings) {
-    employeesMap.set(m.empCode, {
-      empKey: m.empCode,
-      empCode: m.empCode,
-      personId: m.personId,
-      scannerName: m.scannerName,
-      fullName: m.fullName,
-      nickname: m.nickname,
-      department: m.department,
-      isSales: m.department.includes('ขาย'),
+    const key = m.empCode || m.personId || m.fullName;
+    employeesMap.set(key, {
+      empKey: key,
+      empCode: m.empCode || '-',
+      personId: m.personId || '-',
+      scannerName: m.scannerName || m.fullName || '-',
+      fullName: m.fullName || '-',
+      nickname: m.nickname || m.scannerName || '-',
+      department: m.department || 'ฝ่ายแอดมิน',
+      isSales: (m.department || '').includes('ขาย'),
       isMappedOfficial: true,
     });
   }

@@ -188,10 +188,18 @@ export default function App() {
     loadHRState().then(async ({ state, source }) => {
       if (!mounted) return;
       if (state) {
-        if (state.employeeMappings && state.employeeMappings.length > 0) {
+        if (
+          state.employeeMappings &&
+          state.employeeMappings.length > 0 &&
+          state.employeeMappings.every((m) => m.empCode && m.scannerName)
+        ) {
           setEmployeeMappings(state.employeeMappings);
         }
-        if (state.quotaRecords && state.quotaRecords.length > 0) {
+        if (
+          state.quotaRecords &&
+          state.quotaRecords.length > 0 &&
+          state.quotaRecords.every((q) => q.sickQuotaDays > 0)
+        ) {
           setQuotaRecords(state.quotaRecords);
         }
         if (state.leaveRecords && state.leaveRecords.length > 0) {

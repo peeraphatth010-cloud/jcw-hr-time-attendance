@@ -1,215 +1,294 @@
-export interface LeaveQuotaItem {
-  entitled: number;
-  used: number;
-  remaining: number;
-}
+export type LeaveCategory =
+  | 'ลาป่วย'
+  | 'ลากิจ'
+  | 'ลาพักร้อน'
+  | 'ลาไม่รับค่าจ้าง'
+  | 'ลาอื่นๆ';
 
-export interface EmployeeQuotas {
-  sick: LeaveQuotaItem;
-  personal: LeaveQuotaItem;
-  vacation: LeaveQuotaItem;
-  other: LeaveQuotaItem;
-}
-
-export interface EmployeeProfile {
-  key: string; // unique internal key e.g. empCode or personId+name
-  empCode: string;
-  prefix: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  department: string;
-  position: string;
-  email: string;
-  personId: string; // ID บุคคล from mapping
-  scannerNames: string[]; // Nicknames/names in fingerprint scanner
-  isSales: boolean;
-  isActive: boolean; // true for current 13 mapped employees, false for historical unmapped
-  quotas: EmployeeQuotas;
-}
-
-export interface RawScanRecord {
-  id: string;
-  rowNum: string;
+export interface EmployeeMapping {
   personId: string;
   scannerName: string;
-  empKey: string; // resolved employee key
+  empCode: string;
+  fullName: string;
+  nickname: string;
   department: string;
-  position: string;
-  gender: string;
-  date: string; // YYYY-MM-DD (CE)
-  dayOfWeek: string;
-  schedule: string;
-  scanIn: string; // HH:mm:ss or ""
-  scanOut: string; // HH:mm:ss or ""
-  sheetLateCount: number;
-  sheetLateMinutes: number;
-  sheetSick: number;
-  sheetPersonal: number;
-  sheetVacation: number;
-  sheetUnpaid: number;
-  sheetNote: string;
-  monthKey: string; // YYYY-MM
 }
 
-export type LeaveCategory = 'ลาป่วย' | 'ลากิจ' | 'ลาพักร้อน' | 'ลาไม่รับค่าจ้าง' | 'ลาอื่นๆ';
+export interface RawAttendanceRow {
+  id: string;
+  sheetMonth: string;
+  rowNumber: number;
+  personId: string;
+  scannerName: string;
+  companyDept: string;
+  position: string;
+  gender: string;
+  date: string; // YYYY-MM-DD
+  dayOfWeek: string;
+  schedule: string;
+  scanIn: string;
+  scanOut: string;
+  sheetLateCount: number | null;
+  sheetLateMinutes: number | null;
+  sheetSickLeave: number | null;
+  sheetPersonalLeave: number | null;
+  sheetVacationLeave: number | null;
+  sheetUnpaidLeave: number | null;
+  sheetNote: string;
+}
 
 export interface LeaveFormRecord {
   id: string;
   timestamp: string;
-  prefixName: string;
-  firstName: string;
-  lastName: string;
   fullName: string;
+  nickname: string;
   empCode: string;
-  empKey: string;
-  startWorkDate: string;
-  department: string;
   position: string;
-  rawLeaveType: string; // ลาป่วย | ลากิจ | ลาพักร้อน | ลาอื่นๆ
-  effectiveCategory: LeaveCategory;
-  startDate: string; // YYYY-MM-DD (CE)
-  endDate: string; // YYYY-MM-DD (CE)
-  hours: number;
+  department: string;
+  leaveType: LeaveCategory;
   reason: string;
-  status: 'อนุมัติ' | 'รออนุมัติ' | 'ไม่อนุมัติ' | string;
-  approvedAt: string;
-  calculatedDays: number; // hours / 8
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  hours: number;
+  days: number;
+  attachmentUrl: string;
+  status: string;
+  approvedDate: string;
+  note: string;
   isUnpaidLeave: boolean;
-  isCarryoverOrTest: boolean; // true if reason indicates prior cumulative entry or system test
-  excludeFromMonthlyUsage: boolean; // controllable by HR
+  isHistoricalCarryover: boolean;
+}
+
+export interface EmployeeQuotaRecord {
+  empCode: string;
+  fullName: string;
+  nickname: string;
+  department: string;
+  sickQuotaDays: number;
+  personalQuotaDays: number;
+  vacationQuotaDays: number;
+  otherQuotaDays: number;
+  sickUsedDays: number;
+  personalUsedDays: number;
+  vacationUsedDays: number;
+  otherUsedDays: number;
+  sickRemainingDays: number;
+  personalRemainingDays: number;
+  vacationRemainingDays: number;
+  otherRemainingDays: number;
 }
 
 export interface HROverrideRecord {
-  key: string; // `${empKey}_${date}`
+  key: string;
   empKey: string;
   date: string;
-  overrideScanIn?: string; // HH:mm:ss
-  overrideScanOut?: string; // HH:mm:ss
-  overrideStatus?: 'auto' | 'normal' | 'client_visit' | 'excused_late' | 'holiday';
-  overrideLeaveCategory?: LeaveCategory | '';
-  overrideLeaveDays?: number;
+  overrideScanIn?: string;
+  overrideScanOut?: string;
+  overrideStatus?: DailyAuditRecord['scanStatus'];
+  overrideLateCount?: number | null;
+  overrideLateMinutes?: number | null;
   hrNote: string;
   updatedAt: string;
-  updatedBy: string;
 }
 
-export interface DailyLeaveEntry {
-  source: 'form' | 'sheet' | 'hr_override';
-  category: LeaveCategory;
-  days: number;
-  hours: number;
-  reason: string;
+export interface AuditSettings {
+  onlyApprovedLeaves: boolean;
+  excludeCarryoverLeaves: boolean;
+  includeSheetLeaves: boolean;
+  customHolidays: string[];
+}
+
+export interface DailyAuditRecord {
+  key: string;
   date: string;
-  formId?: string;
-  status?: string;
-}
-
-export type ScanAuditStatus =
-  | 'complete'
-  | 'sales_client_visit'
-  | 'missing_both_with_leave'
-  | 'missing_both_no_leave'
-  | 'missing_in_has_out'
-  | 'has_in_missing_out'
-  | 'holiday_or_off';
-
-export interface DailyEvaluatedRecord {
-  empKey: string;
-  employee: EmployeeProfile;
-  date: string; // YYYY-MM-DD
   dayOfWeek: string;
-  rawScan?: RawScanRecord;
-  hrOverride?: HROverrideRecord;
-  // Original vs Effective Scan
+  empCode: string;
+  personId: string;
+  scannerName: string;
+  fullName: string;
+  nickname: string;
+  department: string;
+  isSales: boolean;
   originalScanIn: string;
   originalScanOut: string;
   effectiveScanIn: string;
   effectiveScanOut: string;
   hasIn: boolean;
   hasOut: boolean;
-  // Sales & Threshold logic
-  isSales: boolean;
-  prevWorkdayWasClientVisit: boolean;
-  lateThreshold: '08:15' | '09:00';
-  // Late evaluation
-  isLate: boolean;
+  scanStatus:
+    | 'ครบปกติ'
+    | 'ลาเต็มวัน/มีข้อมูลการลา'
+    | 'คาดว่าไปพบลูกค้า'
+    | 'พบสแกนเข้า แต่ไม่พบสแกนออก'
+    | 'ไม่พบสแกนเข้า แต่พบสแกนออก'
+    | 'ไม่พบสแกนเข้า-ออกและไม่มีใบลา';
+  alertMessage: string;
+  salesStatus: '' | 'คาดว่าไปพบลูกค้า';
+  isNextDayAfterClientVisit: boolean;
+  lateRuleApplied:
+    | 'ปกติ (08:15)'
+    | 'อนุโลม (08:01-08:15 เสียเบี้ยขยัน)'
+    | 'อนุโลมฝ่ายขาย (09:00)';
   lateCount: number;
   lateMinutes: number;
-  isOnTimeForIncentive: boolean; // <= 08:00:00
-  // Leave evaluation on this date
-  leaves: DailyLeaveEntry[];
-  sickDays: number;
-  personalDays: number;
-  vacationDays: number;
-  unpaidDays: number;
-  otherDays: number;
-  totalLeaveDays: number;
-  // Scan completeness & JCW Business Rules Status
-  auditStatus: ScanAuditStatus;
-  statusLabel: string;
-  auditAlertMessage: string;
-  combinedNote: string;
+  sickLeaveDays: number;
+  personalLeaveDays: number;
+  vacationLeaveDays: number;
+  unpaidLeaveDays: number;
+  otherLeaveDays: number;
+  totalLeaveDaysOnDate: number;
+  leaveDetails: string[];
+  sheetNote: string;
+  hrNote: string;
+  hasHROverride: boolean;
 }
 
-export interface MonthlyEmployeeSummary {
-  empKey: string;
-  employee: EmployeeProfile;
-  monthKey: string; // YYYY-MM
-  dailyRecords: DailyEvaluatedRecord[];
-  workedDaysCount: number;
-  // 1. เบี้ยขยัน (Diligence Allowance)
-  incentiveEligible: boolean;
-  allWorkedDaysBefore8: boolean;
-  daysAfter8List: { date: string; scanIn: string }[];
+export interface DiligenceReportItem {
+  empCode: string;
+  personId: string;
+  fullName: string;
+  nickname: string;
+  department: string;
+  isSales: boolean;
+  isEligible: boolean;
+  totalWorkdays: number;
+  daysWorked: number;
+  daysScanAfter0800: number;
+  totalLeaveDays: number;
   disqualifyReasons: string[];
-  // 2. การมาสาย (Lateness)
-  totalLateCount: number;
-  totalLateMinutes: number;
-  lateDaysDetail: {
+}
+
+export interface LateSummaryReportItem {
+  empCode: string;
+  personId: string;
+  fullName: string;
+  nickname: string;
+  department: string;
+  lateCount: number;
+  lateMinutes: number;
+  dailyDetails: {
     date: string;
     scanIn: string;
-    threshold: string;
-    minutes: number;
+    lateMinutes: number;
+    rule: string;
     note: string;
   }[];
-  // 3. ลาไม่รับค่าจ้าง และ ลาอื่นๆ
+}
+
+export interface UnpaidAndOtherLeaveReportItem {
+  empCode: string;
+  personId: string;
+  fullName: string;
+  nickname: string;
+  department: string;
   unpaidDays: number;
   unpaidHours: number;
   otherDays: number;
   otherHours: number;
-  unpaidAndOtherList: DailyLeaveEntry[];
-  // 4. รายละเอียดการใช้สิทธิในเดือน
-  allLeavesInMonth: DailyLeaveEntry[];
-  // 5. สรุปกิจกรรมการลาและสาย
+  totalDays: number;
+  totalHours: number;
+  details: {
+    date: string;
+    type: 'ลาไม่รับค่าจ้าง' | 'ลาอื่นๆ';
+    days: number;
+    hours: number;
+    reason: string;
+  }[];
+}
+
+export interface MonthlyLeaveUsageReportItem {
+  id: string;
+  empCode: string;
+  personId: string;
+  fullName: string;
+  nickname: string;
+  department: string;
+  leaveType: LeaveCategory;
+  isUnpaid: boolean;
+  startDate: string;
+  endDate: string;
+  hours: number;
+  days: number;
+  reason: string;
+  status: string;
+  note: string;
+  source: string;
+  isHistoricalCarryover: boolean;
+}
+
+export interface MonthlyActivitySummaryItem {
+  empCode: string;
+  personId: string;
+  fullName: string;
+  nickname: string;
+  department: string;
   sickDays: number;
   sickHours: number;
   personalDays: number;
   personalHours: number;
   vacationDays: number;
   vacationHours: number;
+  unpaidDays: number;
+  unpaidHours: number;
+  otherDays: number;
+  otherHours: number;
   totalLeaveDays: number;
   totalLeaveHours: number;
-  // 6. สิทธิคงเหลือ
-  quotas: EmployeeQuotas;
-  // 7. ความผิดปกติสแกนนิ้ว / ฝ่ายขายพบลูกค้า
-  missingBothNoLeaveCount: number;
-  missingInCount: number;
-  missingOutCount: number;
-  salesClientVisitCount: number;
-  anomalyRecords: DailyEvaluatedRecord[];
+  lateCount: number;
+  lateMinutes: number;
+  diligenceEligible: boolean;
 }
 
-export type LeaveSourceMode = 'hybrid' | 'form_only' | 'sheet_only';
-export type IncentiveEightRule = 'strict_08_00_00' | 'minute_08_00_59';
-export type LateMinuteCalcRule = 'truncate_seconds' | 'ceil_seconds';
+export interface QuotaReportItem {
+  empCode: string;
+  personId: string;
+  fullName: string;
+  nickname: string;
+  department: string;
+  sickQuota: number;
+  sickUsedTotal: number;
+  sickRemaining: number;
+  personalQuota: number;
+  personalUsedTotal: number;
+  personalRemaining: number;
+  vacationQuota: number;
+  vacationUsedTotal: number;
+  vacationRemaining: number;
+  otherQuota: number;
+  otherUsedTotal: number;
+  otherRemaining: number;
+  monthSickUsed: number;
+  monthPersonalUsed: number;
+  monthVacationUsed: number;
+  monthOtherAndUnpaidUsed: number;
+}
 
-export interface AuditSettings {
-  leaveSourceMode: LeaveSourceMode;
-  includeCarryoverLeavesInMonthly: boolean;
-  incentiveEightRule: IncentiveEightRule;
-  lateMinuteCalcRule: LateMinuteCalcRule;
-  onlyActiveMappedEmployees: boolean;
-  autoIgnoreEmptyCompanyDays: boolean;
-  customHolidays: string[]; // YYYY-MM-DD
+export interface MonthlyAuditOutput {
+  yearMonth: string;
+  workdaysInMonth: string[];
+  dailyRecords: DailyAuditRecord[];
+  diligenceReport: DiligenceReportItem[];
+  lateSummaryReport: LateSummaryReportItem[];
+  unpaidAndOtherLeaveReport: UnpaidAndOtherLeaveReportItem[];
+  monthlyLeaveUsageReport: MonthlyLeaveUsageReportItem[];
+  activitySummaryReport: MonthlyActivitySummaryItem[];
+  activityGrandTotal: {
+    sickDays: number;
+    sickHours: number;
+    personalDays: number;
+    personalHours: number;
+    vacationDays: number;
+    vacationHours: number;
+    unpaidDays: number;
+    unpaidHours: number;
+    otherDays: number;
+    otherHours: number;
+    totalLeaveDays: number;
+    totalLeaveHours: number;
+    lateCount: number;
+    lateMinutes: number;
+    diligenceEligibleCount: number;
+  };
+  quotaReport: QuotaReportItem[];
+  scanAnomalyRecords: DailyAuditRecord[];
 }

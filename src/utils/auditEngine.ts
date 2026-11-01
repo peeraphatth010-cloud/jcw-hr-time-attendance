@@ -17,7 +17,7 @@ import {
 import {
   calculateSalesNextDayLate,
   calculateStandardLate,
-  format2,
+  formatLeaveHuman,
   getThaiDayOfWeek,
   getWeekdaysInRange,
   inspectLeaveDateRange,
@@ -509,7 +509,7 @@ export function runMonthlyAttendanceAudit(params: {
           dateCheck.dateNote ||
           (weekdaysInTargetMonth.length === 0
             ? `ใบลายื่นล่วงหน้าสำหรับเดือน ${dateCheck.startDate.slice(0, 7)} (ไม่ถูกนำมาหักในเดือน ${yearMonth})`
-            : `หักเฉพาะสัดส่วนวันทำงานในเดือน ${yearMonth} จำนวน ${format2(daysInTarget)} วัน`),
+            : `หักเฉพาะสัดส่วนวันทำงานในเดือน ${yearMonth} จำนวน ${formatLeaveHuman(daysInTarget, { zeroText: '0 วัน' })}`),
       });
     }
 
@@ -633,7 +633,6 @@ export function runMonthlyAttendanceAudit(params: {
 
       for (const fl of formLeavesToday) {
         const dVal = round2(fl.days);
-        const hVal = round2(fl.hours);
         if (fl.isUnpaid || fl.leaveType === 'ลาไม่รับค่าจ้าง') {
           unpaidLeaveDays = round2(unpaidLeaveDays + dVal);
         } else if (fl.leaveType === 'ลาป่วย') {
@@ -646,7 +645,7 @@ export function runMonthlyAttendanceAudit(params: {
           otherLeaveDays = round2(otherLeaveDays + dVal);
         }
         leaveDetailsText.push(
-          `${fl.leaveType} ${format2(dVal)} วัน (${format2(hVal)} ชม.)${fl.reason ? ` - ${fl.reason}` : ''}`
+          `${fl.leaveType} ${formatLeaveHuman(dVal)}${fl.reason ? ` - ${fl.reason}` : ''}`
         );
       }
 
@@ -664,7 +663,7 @@ export function runMonthlyAttendanceAudit(params: {
         if (sSick > 0) {
           sickLeaveDays = round2(sickLeaveDays + sSick);
           leaveDetailsText.push(
-            `ลาป่วย (ในชีตสแกน) ${format2(sSick)} วัน`
+            `ลาป่วย (ในชีตสแกน) ${formatLeaveHuman(sSick)}`
           );
           monthlyLeaveUsageList.push({
             id: `sheet-sick-${key}`,
@@ -692,7 +691,7 @@ export function runMonthlyAttendanceAudit(params: {
         if (sPers > 0) {
           personalLeaveDays = round2(personalLeaveDays + sPers);
           leaveDetailsText.push(
-            `ลากิจ (ในชีตสแกน) ${format2(sPers)} วัน`
+            `ลากิจ (ในชีตสแกน) ${formatLeaveHuman(sPers)}`
           );
           monthlyLeaveUsageList.push({
             id: `sheet-pers-${key}`,
@@ -720,7 +719,7 @@ export function runMonthlyAttendanceAudit(params: {
         if (sVac > 0) {
           vacationLeaveDays = round2(vacationLeaveDays + sVac);
           leaveDetailsText.push(
-            `ลาพักร้อน (ในชีตสแกน) ${format2(sVac)} วัน`
+            `ลาพักร้อน (ในชีตสแกน) ${formatLeaveHuman(sVac)}`
           );
           monthlyLeaveUsageList.push({
             id: `sheet-vac-${key}`,
@@ -748,7 +747,7 @@ export function runMonthlyAttendanceAudit(params: {
         if (sUnpaid > 0) {
           unpaidLeaveDays = round2(unpaidLeaveDays + sUnpaid);
           leaveDetailsText.push(
-            `ลาไม่รับค่าจ้าง (ในชีตสแกน) ${format2(sUnpaid)} วัน`
+            `ลาไม่รับค่าจ้าง (ในชีตสแกน) ${formatLeaveHuman(sUnpaid)}`
           );
           monthlyLeaveUsageList.push({
             id: `sheet-unpaid-${key}`,
@@ -1032,7 +1031,7 @@ export function runMonthlyAttendanceAudit(params: {
     }
     if (totalLeaveDays > 1.0) {
       disqualifyReasons.push(
-        `วันลารวมในเดือนเกิน 1.00 วัน (ลาไป ${format2(totalLeaveDays)} วัน)`
+        `วันลารวมในเดือนเกิน 1 วัน (ลาไป ${formatLeaveHuman(totalLeaveDays)})`
       );
     }
     if (empWorkedDays === 0) {

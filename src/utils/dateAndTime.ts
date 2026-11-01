@@ -1,4 +1,4 @@
-// ฟังก์ชันจัดการวันที่ เวลา และการปัดเศษมาตรฐานเดียวกันทั้งระบบ (Attendance_Audit_Business_Rules_JCW)
+// ฟังก์ชันจัดการวันที่ เวลา และการแสดงผลวันลาแบบอ่านง่าย (1 วันทำงาน = 8 ชั่วโมง)
 
 const THAI_MONTH_NAMES: Record<string, string> = {
   '01': 'มกราคม',
@@ -26,7 +26,7 @@ const THAI_DAY_NAMES = [
 ];
 
 /**
- * ปัดเศษทศนิยม 2 ตำแหน่งด้วยสูตรมาตรฐานเดียวกันทั้งระบบ (Half-Up)
+ * ปัดเศษทศนิยม 2 ตำแหน่งสำหรับการคำนวณภายในระบบ
  */
 export function round2(val: number | null | undefined): number {
   if (val === null || val === undefined || isNaN(val)) return 0;
@@ -34,10 +34,64 @@ export function round2(val: number | null | undefined): number {
 }
 
 /**
- * แสดงผลตัวเลขทศนิยม 2 ตำแหน่งเสมอ เช่น 1 -> "1.00", 0.5 -> "0.50", 0.25 -> "0.25"
+ * แปลงตัวเลขวันลา (ฐาน 1 วัน = 8 ชั่วโมง) เป็นข้อความที่อ่านง่าย ไม่ลายตา
+ * ตัวอย่าง:
+ * - 0 -> "-" (หรือ "0 วัน" หากระบุ zeroText)
+ * - 0.25 -> "2 ชม."
+ * - 0.5 -> "ครึ่งวัน (4 ชม.)"
+ * - 0.75 -> "6 ชม."
+ * - 1 -> "1 วัน"
+ * - 1.5 -> "1 วัน 4 ชม."
+ * - 2.5 -> "2 วัน 4 ชม."
+ * - 6.75 -> "6 วัน 6 ชม."
+ * - 30 -> "30 วัน"
+ */
+export function formatLeaveHuman(
+  days: number | null | undefined,
+  options?: { zeroText?: string; compact?: boolean }
+): string {
+  const zeroText = options?.zeroText ?? '-';
+  if (days === null || days === undefined || isNaN(days) || days <= 0) {
+    return zeroText;
+  }
+
+  const totalHours = Math.round(days * 8 * 10) / 10;
+  if (totalHours <= 0) return zeroText;
+
+  const wholeDays = Math.floor((totalHours + 0.001) / 8);
+  const remHours = Math.round((totalHours - wholeDays * 8) * 10) / 10;
+
+  if (wholeDays > 0 && remHours <= 0) {
+    return `${wholeDays} วัน`;
+  }
+
+  if (wholeDays === 0) {
+    if (remHours === 4) {
+      return options?.compact ? 'ครึ่งวัน (4 ชม.)' : 'ครึ่งวัน (4 ชม.)';
+    }
+    return `${remHours} ชม.`;
+  }
+
+  // กรณีมีทั้งจำนวนวันเต็ม และเศษชั่วโมง เช่น 1 วัน 4 ชม. หรือ 29 วัน 2 ชม.
+  return `${wholeDays} วัน ${remHours} ชม.`;
+}
+
+/**
+ * แสดงผลชั่วโมงแบบสะอาด ไม่มีทศนิยม .00 เกินจำเป็น เช่น 8 -> "8 ชม.", 4 -> "4 ชม."
+ */
+export function formatHoursClean(hours: number | null | undefined): string {
+  if (hours === null || hours === undefined || isNaN(hours) || hours <= 0) {
+    return '0 ชม.';
+  }
+  const h = Math.round(hours * 10) / 10;
+  return `${h} ชม.`;
+}
+
+/**
+ * คงฟังก์ชัน format2 ไว้แต่ปรับให้เรียกแสดงผลตัวเลขสะอาด (ไม่แสดง .00 ที่ลายตา)
  */
 export function format2(val: number | null | undefined): string {
-  return round2(val).toFixed(2);
+  return formatLeaveHuman(val, { zeroText: '0 วัน' });
 }
 
 /**
@@ -59,9 +113,6 @@ export function normalizeYear(y: number): number {
 
 /**
  * แปลงค่าวันที่จาก Excel หรือข้อความให้เป็นมาตรฐาน YYYY-MM-DD เสมอ
- * @param raw ค่าดิบจากเซลล์ (string, number, Date)
- * @param sourceType 'ATTENDANCE_YMD' สำหรับไฟล์สแกนนิ้ว (คอลัมน์ G: YYYY-MM-DD)
- *                   หรือ 'LEAVE_DMY' สำหรับไฟล์ใบลาออนไลน์ (คอลัมน์ I, J: DD/MM/YYYY)
  */
 export function normalizeDateStr(
   raw: unknown,
@@ -114,7 +165,6 @@ export function normalizeDateStr(
     const y = normalizeYear(yearRaw);
 
     if (sourceType === 'LEAVE_DMY') {
-      // คอลัมน์ I, J ของไฟล์แบบฟอร์มลาออนไลน์ เรียง วัน/เดือน/ปี (DD/MM/YYYY) เป็นหลัก
       if (first >= 1 && first <= 31 && second >= 1 && second <= 12) {
         return `${y}-${String(second).padStart(2, '0')}-${String(first).padStart(2, '0')}`;
       }

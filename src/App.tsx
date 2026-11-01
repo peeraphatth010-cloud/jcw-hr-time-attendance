@@ -55,6 +55,8 @@ import { runMonthlyAttendanceAudit } from './utils/auditEngine';
 import {
   format2,
   formatDateDisplay,
+  formatHoursClean,
+  formatLeaveHuman,
   formatYearMonthThai,
   inspectLeaveDateRange,
   round2,
@@ -1081,7 +1083,9 @@ export default function App() {
                 id: 'report3_unpaid',
                 label: '3. ลาไม่รับค่าจ้าง/อื่นๆ',
                 icon: AlertTriangle,
-                badge: `${format2(auditResult.activityGrandTotal.unpaidDays)} วัน`,
+                badge: formatLeaveHuman(auditResult.activityGrandTotal.unpaidDays, {
+                  zeroText: '0 วัน',
+                }),
               },
               {
                 id: 'report4_monthly_leave',
@@ -1093,7 +1097,10 @@ export default function App() {
                 id: 'report5_activity',
                 label: '5. สรุปกิจกรรมลา & สาย',
                 icon: FileSpreadsheet,
-                badge: `${format2(auditResult.activityGrandTotal.totalLeaveDays)} วัน`,
+                badge: formatLeaveHuman(
+                  auditResult.activityGrandTotal.totalLeaveDays,
+                  { zeroText: '0 วัน' }
+                ),
               },
               {
                 id: 'report6_quota',
@@ -1278,19 +1285,24 @@ export default function App() {
                       </span>
                       <AlertTriangle className="w-5 h-5 text-rose-600" />
                     </div>
-                    <div className="mt-3 flex items-baseline gap-1.5">
-                      <span className="text-3xl font-extrabold text-rose-700">
-                        {format2(auditResult.activityGrandTotal.unpaidDays)}
+                    <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+                      <span className="text-2xl font-extrabold text-rose-700">
+                        {formatLeaveHuman(
+                          auditResult.activityGrandTotal.unpaidDays,
+                          { zeroText: '0 วัน' }
+                        )}
                       </span>
-                      <span className="text-sm font-bold text-rose-900">
-                        วัน ({format2(auditResult.activityGrandTotal.unpaidHours)}{' '}
-                        ชม.)
+                      <span className="text-xs font-bold text-rose-900">
+                        ({formatHoursClean(auditResult.activityGrandTotal.unpaidHours)})
                       </span>
                     </div>
                   </div>
                   <p className="mt-3 text-xs text-rose-900/80">
                     จำนวนผู้ลาไม่รับค่าจ้าง {unpaidPeopleList.length} คน (รวมวันลาทุกประเภททั้งเดือน{' '}
-                    {format2(auditResult.activityGrandTotal.totalLeaveDays)} วัน)
+                    {formatLeaveHuman(auditResult.activityGrandTotal.totalLeaveDays, {
+                      zeroText: '0 วัน',
+                    })}
+                    )
                   </p>
                 </div>
 
@@ -1383,7 +1395,10 @@ export default function App() {
                             >
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                               {e.fullName} ({e.nickname}) — {e.position} [ลา{' '}
-                              {format2(e.totalLeaveDays)} วัน]
+                              {formatLeaveHuman(e.totalLeaveDays, {
+                                zeroText: '0 วัน',
+                              })}
+                              ]
                             </span>
                           ))}
                         </div>
@@ -1453,12 +1468,15 @@ export default function App() {
                       <div className="pt-2 border-t border-slate-200">
                         <div className="font-bold text-rose-950 mb-1">
                           ผู้ลาไม่รับค่าจ้างรวม{' '}
-                          {format2(auditResult.activityGrandTotal.unpaidDays)} วัน (
-                          {format2(auditResult.activityGrandTotal.unpaidHours)} ชม.):
+                          {formatLeaveHuman(
+                            auditResult.activityGrandTotal.unpaidDays,
+                            { zeroText: '0 วัน' }
+                          )}{' '}
+                          ({formatHoursClean(auditResult.activityGrandTotal.unpaidHours)}):
                         </div>
                         {unpaidPeopleList.length === 0 ? (
                           <div className="text-slate-500">
-                            ไม่มีการลาไม่รับค่าจ้างในเดือนนี้ (0.00 วัน)
+                            ไม่มีการลาไม่รับค่าจ้างในเดือนนี้ (0 วัน)
                           </div>
                         ) : (
                           <div className="space-y-1">
@@ -1471,8 +1489,10 @@ export default function App() {
                                   {u.fullName} ({u.nickname}) — {u.position}
                                 </span>
                                 <span className="font-bold text-rose-700">
-                                  {format2(u.unpaidDays)} วัน ({format2(u.unpaidHours)}{' '}
-                                  ชม.)
+                                  {formatLeaveHuman(u.unpaidDays, {
+                                    zeroText: '0 วัน',
+                                  })}{' '}
+                                  ({formatHoursClean(u.unpaidHours)})
                                 </span>
                               </div>
                             ))}
@@ -1988,10 +2008,12 @@ export default function App() {
                           className={
                             item.totalLeaveDays > 1
                               ? 'text-rose-600 font-semibold'
-                              : 'text-slate-700'
+                              : item.totalLeaveDays > 0
+                              ? 'text-slate-800 font-medium'
+                              : 'text-slate-400'
                           }
                         >
-                          {format2(item.totalLeaveDays)} วัน
+                          {formatLeaveHuman(item.totalLeaveDays)}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center">
@@ -2173,7 +2195,7 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* REPORT 3: ใครลาไม่รับค่าจ้าง หรือ ลาอื่นๆ บ้าง กี่วัน กี่ชั่วโมง (2 ตำแหน่ง) */}
+        {/* REPORT 3: ใครลาไม่รับค่าจ้าง หรือ ลาอื่นๆ บ้าง กี่วัน กี่ชั่วโมง */}
         {/* ===================================================================== */}
         {(activeTab === 'overview' || activeTab === 'report3_unpaid') && (
           <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -2181,18 +2203,23 @@ export default function App() {
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-rose-600" />
-                  รายงานที่ 3: สรุปการลาไม่รับค่าจ้าง และ ลาอื่นๆ (ทศนิยม 2 ตำแหน่ง) ประจำเดือน{' '}
+                  รายงานที่ 3: สรุปการลาไม่รับค่าจ้าง และ ลาอื่นๆ (กี่วัน / กี่ชั่วโมง) ประจำเดือน{' '}
                   {formatYearMonthThai(selectedYearMonth)}
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  คำนวณตามเกณฑ์ 8 ชั่วโมง = 1.00 วันทำงาน | แสดงตัวเลขวันลาเป็น 2 ตำแหน่งและใช้สูตรจัดประเภทเดียวกับทุกรายงาน
+                  คิดบนฐาน 1 วันทำงาน = 8 ชั่วโมง (ครึ่งวัน = 4 ชม.) และใช้สูตรจัดประเภทเดียวกับทุกรายงาน
                 </p>
               </div>
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 self-start sm:self-center">
-                ลาไม่รับค่าจ้าง {format2(auditResult.activityGrandTotal.unpaidDays)} วัน (
-                {format2(auditResult.activityGrandTotal.unpaidHours)} ชม.) | ลาอื่นๆ{' '}
-                {format2(auditResult.activityGrandTotal.otherDays)} วัน (
-                {format2(auditResult.activityGrandTotal.otherHours)} ชม.)
+                ลาไม่รับค่าจ้าง{' '}
+                {formatLeaveHuman(auditResult.activityGrandTotal.unpaidDays, {
+                  zeroText: '0 วัน',
+                })}{' '}
+                ({formatHoursClean(auditResult.activityGrandTotal.unpaidHours)}) | ลาอื่นๆ{' '}
+                {formatLeaveHuman(auditResult.activityGrandTotal.otherDays, {
+                  zeroText: '0 วัน',
+                })}{' '}
+                ({formatHoursClean(auditResult.activityGrandTotal.otherHours)})
               </span>
             </div>
 
@@ -2246,35 +2273,31 @@ export default function App() {
                       <td className="py-2.5 px-3 text-center">
                         {item.unpaidDays > 0 ? (
                           <span className="font-bold text-rose-700">
-                            {format2(item.unpaidDays)} วัน (
-                            {format2(item.unpaidHours)} ชม.)
+                            {formatLeaveHuman(item.unpaidDays)} (
+                            {formatHoursClean(item.unpaidHours)})
                           </span>
                         ) : (
-                          <span className="text-slate-400">
-                            0.00 วัน (0.00 ชม.)
-                          </span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         {item.otherDays > 0 ? (
                           <span className="font-bold text-purple-700">
-                            {format2(item.otherDays)} วัน (
-                            {format2(item.otherHours)} ชม.)
+                            {formatLeaveHuman(item.otherDays)} (
+                            {formatHoursClean(item.otherHours)})
                           </span>
                         ) : (
-                          <span className="text-slate-400">
-                            0.00 วัน (0.00 ชม.)
-                          </span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-center font-bold">
                         {item.totalDays > 0 ? (
                           <span className="text-slate-900">
-                            {format2(item.totalDays)} วัน (
-                            {format2(item.totalHours)} ชม.)
+                            {formatLeaveHuman(item.totalDays)} (
+                            {formatHoursClean(item.totalHours)})
                           </span>
                         ) : (
-                          <span className="text-slate-400">0.00 วัน</span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       {reportMode === 'hr_payroll' && (
@@ -2288,8 +2311,8 @@ export default function App() {
                                   <span className="font-semibold">
                                     {formatDateDisplay(d.date)}
                                   </span>
-                                  : {d.type} {format2(d.days)} วัน (
-                                  {format2(d.hours)} ชม.) —{' '}
+                                  : {d.type} {formatLeaveHuman(d.days)} (
+                                  {formatHoursClean(d.hours)}) —{' '}
                                   <span className="text-slate-600">
                                     {d.reason}
                                   </span>
@@ -2308,24 +2331,29 @@ export default function App() {
                       รวมทั้งสิ้น (Grand Total):
                     </td>
                     <td className="py-2.5 px-3 text-center text-rose-700">
-                      {format2(auditResult.activityGrandTotal.unpaidDays)} วัน (
-                      {format2(auditResult.activityGrandTotal.unpaidHours)} ชม.)
+                      {formatLeaveHuman(auditResult.activityGrandTotal.unpaidDays, {
+                        zeroText: '0 วัน',
+                      })}{' '}
+                      ({formatHoursClean(auditResult.activityGrandTotal.unpaidHours)})
                     </td>
                     <td className="py-2.5 px-3 text-center text-purple-700">
-                      {format2(auditResult.activityGrandTotal.otherDays)} วัน (
-                      {format2(auditResult.activityGrandTotal.otherHours)} ชม.)
+                      {formatLeaveHuman(auditResult.activityGrandTotal.otherDays, {
+                        zeroText: '0 วัน',
+                      })}{' '}
+                      ({formatHoursClean(auditResult.activityGrandTotal.otherHours)})
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {format2(
+                      {formatLeaveHuman(
                         auditResult.activityGrandTotal.unpaidDays +
-                          auditResult.activityGrandTotal.otherDays
+                          auditResult.activityGrandTotal.otherDays,
+                        { zeroText: '0 วัน' }
                       )}{' '}
-                      วัน (
-                      {format2(
+                      (
+                      {formatHoursClean(
                         auditResult.activityGrandTotal.unpaidHours +
                           auditResult.activityGrandTotal.otherHours
-                      )}{' '}
-                      ชม.)
+                      )}
+                      )
                     </td>
                     {reportMode === 'hr_payroll' && <td></td>}
                   </tr>
@@ -2378,10 +2406,10 @@ export default function App() {
                         วันที่ใช้สิทธิ (ตั้งแต่วันที่ - ถึงวันที่)
                       </th>
                       <th className="py-2.5 px-3 font-semibold text-center">
-                        จำนวนวัน (2 ตำแหน่ง)
+                        จำนวนวันลา
                       </th>
                       <th className="py-2.5 px-3 font-semibold text-center">
-                        จำนวนชั่วโมง
+                        คิดเป็นชั่วโมง
                       </th>
                       <th className="py-2.5 px-3 font-semibold">
                         เหตุผลการลา
@@ -2443,10 +2471,10 @@ export default function App() {
                               : `${formatDateDisplay(item.startDate)} ถึง ${formatDateDisplay(item.endDate)}`}
                           </td>
                           <td className="py-2.5 px-3 text-center font-bold text-indigo-700">
-                            {format2(item.days)} วัน
+                            {formatLeaveHuman(item.days)}
                           </td>
                           <td className="py-2.5 px-3 text-center text-slate-700">
-                            {format2(item.hours)} ชม.
+                            {formatHoursClean(item.hours)}
                           </td>
                           <td className="py-2.5 px-3 text-xs text-slate-700">
                             {item.reason}
@@ -2474,14 +2502,15 @@ export default function App() {
                         รวมการใช้สิทธิการลาในเดือนนี้ (ตรงกับรายงานที่ 5 ทุกประการ):
                       </td>
                       <td className="py-2.5 px-3 text-center text-indigo-700">
-                        {format2(auditResult.activityGrandTotal.totalLeaveDays)}{' '}
-                        วัน
+                        {formatLeaveHuman(
+                          auditResult.activityGrandTotal.totalLeaveDays,
+                          { zeroText: '0 วัน' }
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-center text-slate-800">
-                        {format2(
+                        {formatHoursClean(
                           auditResult.activityGrandTotal.totalLeaveHours
-                        )}{' '}
-                        ชม.
+                        )}
                       </td>
                       <td colSpan={reportMode === 'hr_payroll' ? 2 : 1}></td>
                     </tr>
@@ -2541,11 +2570,12 @@ export default function App() {
                               {formatDateDisplay(c.endDate)}
                             </td>
                             <td className="py-2 px-3 text-center">
-                              {format2(c.totalRequestedDays ?? c.days)} วัน (
-                              {format2(c.totalRequestedHours ?? c.hours)} ชม.)
+                              {formatLeaveHuman(c.totalRequestedDays ?? c.days)} (
+                              {formatHoursClean(c.totalRequestedHours ?? c.hours)})
                             </td>
                             <td className="py-2 px-3 text-center font-bold text-indigo-700">
-                              {format2(c.days)} วัน ({format2(c.hours)} ชม.)
+                              {formatLeaveHuman(c.days, { zeroText: '0 วัน' })} (
+                              {formatHoursClean(c.hours)})
                             </td>
                             <td className="py-2 px-3 text-amber-900 font-medium">
                               {c.dateValidationNote} — เหตุผล: {c.reason}
@@ -2561,18 +2591,18 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* REPORT 5: สรุปกิจกรรมการลาพนักงาน (ป่วย/กิจ/พักร้อน/ไม่รับค่าจ้าง/อื่นๆ/สาย) 2 ตำแหน่ง */}
+        {/* REPORT 5: สรุปกิจกรรมการลาพนักงาน (ป่วย/กิจ/พักร้อน/ไม่รับค่าจ้าง/อื่นๆ/สาย) */}
         {/* ===================================================================== */}
         {(activeTab === 'overview' || activeTab === 'report5_activity') && (
           <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
               <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
-                รายงานที่ 5: สรุปกิจกรรมการลาทุกประเภทและสถิติการมาสาย (แสดงทศนิยม 2 ตำแหน่งตรงกันทุกรายงาน) ประจำเดือน{' '}
+                รายงานที่ 5: สรุปกิจกรรมการลาทุกประเภทและสถิติการมาสาย ประจำเดือน{' '}
                 {formatYearMonthThai(selectedYearMonth)}
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                แสดงยอดสรุปรายบุคคลแยกตามประเภท (ลาป่วย, ลากิจ, ลาพักร้อน, ลาไม่รับค่าจ้าง, ลาอื่นๆ, มาสาย) พร้อมแถวสรุปรวมทั้งหมดท้ายตาราง
+                แสดงยอดสรุปรายบุคคลแยกตามประเภท (ลาป่วย, ลากิจ, ลาพักร้อน, ลาไม่รับค่าจ้าง, ลาอื่นๆ, มาสาย) คิดบนฐาน 1 วัน = 8 ชม. (ครึ่งวัน = 4 ชม.)
               </p>
             </div>
 
@@ -2587,22 +2617,22 @@ export default function App() {
                     <th className="py-2.5 px-2.5 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-2.5 font-semibold">แผนก</th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-blue-50/60">
-                      ลาป่วย (วัน)
+                      ลาป่วย
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-amber-50/60">
-                      ลากิจ (วัน)
+                      ลากิจ
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-emerald-50/60">
-                      ลาพักร้อน (วัน)
+                      ลาพักร้อน
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-rose-50/60">
-                      ลาไม่รับค่าจ้าง (วัน)
+                      ลาไม่รับค่าจ้าง
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-purple-50/60">
-                      ลาอื่นๆ (วัน)
+                      ลาอื่นๆ
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-indigo-50/60">
-                      รวมวันลา (วัน)
+                      รวมวันลา
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center">
                       สาย (ครั้ง)
@@ -2639,46 +2669,46 @@ export default function App() {
                       <td className="py-2.5 px-2.5 text-center">
                         {item.sickDays > 0 ? (
                           <span className="font-semibold text-blue-700">
-                            {format2(item.sickDays)}
+                            {formatLeaveHuman(item.sickDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0.00</span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.personalDays > 0 ? (
                           <span className="font-semibold text-amber-700">
-                            {format2(item.personalDays)}
+                            {formatLeaveHuman(item.personalDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0.00</span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.vacationDays > 0 ? (
                           <span className="font-semibold text-emerald-700">
-                            {format2(item.vacationDays)}
+                            {formatLeaveHuman(item.vacationDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0.00</span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.unpaidDays > 0 ? (
                           <span className="font-semibold text-rose-700">
-                            {format2(item.unpaidDays)}
+                            {formatLeaveHuman(item.unpaidDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0.00</span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.otherDays > 0 ? (
                           <span className="font-semibold text-purple-700">
-                            {format2(item.otherDays)}
+                            {formatLeaveHuman(item.otherDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0.00</span>
+                          <span className="text-slate-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center font-bold bg-indigo-50/30">
@@ -2689,7 +2719,7 @@ export default function App() {
                               : 'text-slate-400'
                           }
                         >
-                          {format2(item.totalLeaveDays)}
+                          {formatLeaveHuman(item.totalLeaveDays)}
                         </span>
                       </td>
                       <td className="py-2.5 px-2.5 text-center font-semibold">
@@ -2700,7 +2730,7 @@ export default function App() {
                               : 'text-slate-400'
                           }
                         >
-                          {item.lateCount}
+                          {item.lateCount > 0 ? `${item.lateCount} ครั้ง` : '-'}
                         </span>
                       </td>
                       <td className="py-2.5 px-2.5 text-center font-semibold">
@@ -2711,7 +2741,7 @@ export default function App() {
                               : 'text-slate-400'
                           }
                         >
-                          {item.lateMinutes}
+                          {item.lateMinutes > 0 ? `${item.lateMinutes} นาที` : '-'}
                         </span>
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
@@ -2732,23 +2762,38 @@ export default function App() {
                       รวมทั้งบริษัท (Grand Total):
                     </td>
                     <td className="py-3 px-2.5 text-center text-sky-200">
-                      {format2(auditResult.activityGrandTotal.sickDays)} วัน
+                      {formatLeaveHuman(auditResult.activityGrandTotal.sickDays, {
+                        zeroText: '0 วัน',
+                      })}
                     </td>
                     <td className="py-3 px-2.5 text-center text-amber-200">
-                      {format2(auditResult.activityGrandTotal.personalDays)} วัน
+                      {formatLeaveHuman(
+                        auditResult.activityGrandTotal.personalDays,
+                        { zeroText: '0 วัน' }
+                      )}
                     </td>
                     <td className="py-3 px-2.5 text-center text-emerald-200">
-                      {format2(auditResult.activityGrandTotal.vacationDays)} วัน
+                      {formatLeaveHuman(
+                        auditResult.activityGrandTotal.vacationDays,
+                        { zeroText: '0 วัน' }
+                      )}
                     </td>
                     <td className="py-3 px-2.5 text-center text-rose-200">
-                      {format2(auditResult.activityGrandTotal.unpaidDays)} วัน
+                      {formatLeaveHuman(
+                        auditResult.activityGrandTotal.unpaidDays,
+                        { zeroText: '0 วัน' }
+                      )}
                     </td>
                     <td className="py-3 px-2.5 text-center text-purple-200">
-                      {format2(auditResult.activityGrandTotal.otherDays)} วัน
+                      {formatLeaveHuman(auditResult.activityGrandTotal.otherDays, {
+                        zeroText: '0 วัน',
+                      })}
                     </td>
                     <td className="py-3 px-2.5 text-center bg-indigo-900 text-white">
-                      {format2(auditResult.activityGrandTotal.totalLeaveDays)}{' '}
-                      วัน
+                      {formatLeaveHuman(
+                        auditResult.activityGrandTotal.totalLeaveDays,
+                        { zeroText: '0 วัน' }
+                      )}
                     </td>
                     <td className="py-3 px-2.5 text-center text-amber-300">
                       {auditResult.activityGrandTotal.lateCount} ครั้ง
@@ -2767,17 +2812,17 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* REPORT 6: สิทธิคงเหลือแต่ละบุคคล (แสดงทศนิยม 2 ตำแหน่ง) */}
+        {/* REPORT 6: สิทธิคงเหลือแต่ละบุคคล */}
         {/* ===================================================================== */}
         {(activeTab === 'overview' || activeTab === 'report6_quota') && (
           <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
               <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                 <UserCheck className="w-5 h-5 text-emerald-600" />
-                รายงานที่ 6: สรุปสิทธิวันลาคงเหลือรายบุคคล (แสดงทศนิยม 2 ตำแหน่งมาตรฐานเดียวกัน)
+                รายงานที่ 6: สรุปสิทธิวันลาคงเหลือรายบุคคล (คิดบนฐาน 1 วัน = 8 ชม.)
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                แสดงโควตาวันลาที่ได้ทั้งหมด วันลาที่ใช้ไปสะสม และวันลาคงเหลือของพนักงานแต่ละคน
+                แสดงโควตาวันลาที่ได้ทั้งหมด วันลาที่ใช้ไปสะสม และวันลาคงเหลือของพนักงานแต่ละคนในรูปแบบวันและชั่วโมงที่อ่านง่าย
               </p>
             </div>
 
@@ -2801,25 +2846,25 @@ export default function App() {
                       className="py-1.5 px-2 font-semibold text-center bg-blue-50 border-b border-blue-200"
                       colSpan={3}
                     >
-                      ลาป่วย (วัน)
+                      ลาป่วย
                     </th>
                     <th
                       className="py-1.5 px-2 font-semibold text-center bg-amber-50 border-b border-amber-200"
                       colSpan={3}
                     >
-                      ลากิจ (วัน)
+                      ลากิจ
                     </th>
                     <th
                       className="py-1.5 px-2 font-semibold text-center bg-emerald-50 border-b border-emerald-200"
                       colSpan={3}
                     >
-                      ลาพักร้อน (วัน)
+                      ลาพักร้อน
                     </th>
                     <th
                       className="py-1.5 px-2 font-semibold text-center bg-purple-50 border-b border-purple-200"
                       colSpan={2}
                     >
-                      ลาอื่นๆ (วัน)
+                      ลาอื่นๆ
                     </th>
                   </tr>
                   <tr className="bg-slate-50 text-[11px] text-slate-600 border-b border-slate-200">
@@ -2879,40 +2924,44 @@ export default function App() {
                       <td className="py-2.5 px-2.5 text-xs">{q.department}</td>
                       {/* ลาป่วย */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {format2(q.sickQuota)}
+                        {formatLeaveHuman(q.sickQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {format2(q.sickUsedTotal)}
+                        {formatLeaveHuman(q.sickUsedTotal)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-blue-800 bg-blue-50/40">
-                        {format2(q.sickRemaining)}
+                        {formatLeaveHuman(q.sickRemaining, { zeroText: '0 วัน' })}
                       </td>
                       {/* ลากิจ */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {format2(q.personalQuota)}
+                        {formatLeaveHuman(q.personalQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {format2(q.personalUsedTotal)}
+                        {formatLeaveHuman(q.personalUsedTotal)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-amber-800 bg-amber-50/40">
-                        {format2(q.personalRemaining)}
+                        {formatLeaveHuman(q.personalRemaining, {
+                          zeroText: '0 วัน',
+                        })}
                       </td>
                       {/* ลาพักร้อน */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {format2(q.vacationQuota)}
+                        {formatLeaveHuman(q.vacationQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {format2(q.vacationUsedTotal)}
+                        {formatLeaveHuman(q.vacationUsedTotal)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-emerald-800 bg-emerald-50/40">
-                        {format2(q.vacationRemaining)}
+                        {formatLeaveHuman(q.vacationRemaining, {
+                          zeroText: '0 วัน',
+                        })}
                       </td>
                       {/* ลาอื่นๆ */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {format2(q.otherQuota)}
+                        {formatLeaveHuman(q.otherQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-purple-800 bg-purple-50/40">
-                        {format2(q.otherRemaining)}
+                        {formatLeaveHuman(q.otherRemaining)}
                       </td>
                     </tr>
                   ))}

@@ -182,36 +182,48 @@ export default function App() {
   const [newMapNickname, setNewMapNickname] = useState<string>('');
   const [newMapDept, setNewMapDept] = useState<string>('ฝ่ายแอดมิน');
 
-  // โหลดข้อมูลจาก Firebase / LocalStorage ตอนเปิดแอป
+  // โหลดข้อมูลจาก Firebase / LocalStorage ตอนเปิดแอป และซิงก์ข้อมูลเริ่มต้นขึ้น Firebase อัตโนมัติ
   useEffect(() => {
     let mounted = true;
-    loadHRState().then(({ state, source }) => {
-      if (!mounted || !state) return;
-      if (state.employeeMappings && state.employeeMappings.length > 0) {
-        setEmployeeMappings(state.employeeMappings);
+    loadHRState().then(async ({ state, source }) => {
+      if (!mounted) return;
+      if (state) {
+        if (state.employeeMappings && state.employeeMappings.length > 0) {
+          setEmployeeMappings(state.employeeMappings);
+        }
+        if (state.quotaRecords && state.quotaRecords.length > 0) {
+          setQuotaRecords(state.quotaRecords);
+        }
+        if (state.leaveRecords && state.leaveRecords.length > 0) {
+          setLeaveRecords(state.leaveRecords);
+        }
+        if (state.hrOverrides) {
+          setHrOverrides(state.hrOverrides);
+        }
+        if (state.settings) {
+          setSettings(state.settings);
+        }
       }
-      if (state.quotaRecords && state.quotaRecords.length > 0) {
-        setQuotaRecords(state.quotaRecords);
+      if (source === 'firebase') {
+        setSyncStatus('เชื่อมต่อและซิงก์ข้อมูลกับ Firebase (timeattendenceJCW) สำเร็จ');
+      } else {
+        const res = await saveHRState({
+          employeeMappings: state?.employeeMappings || SEED_ID_MAPPING,
+          quotaRecords: state?.quotaRecords || initialQuotaRecords,
+          leaveRecords: state?.leaveRecords || initialLeaveRecords,
+          hrOverrides: state?.hrOverrides || {},
+          settings: state?.settings || DEFAULT_SETTINGS,
+          updatedAt: new Date().toISOString(),
+        });
+        if (res.savedFirebase) {
+          setSyncStatus('ซิงก์ข้อมูลเริ่มต้นขึ้น Firebase (timeattendenceJCW) สำเร็จ');
+        }
       }
-      if (state.leaveRecords && state.leaveRecords.length > 0) {
-        setLeaveRecords(state.leaveRecords);
-      }
-      if (state.hrOverrides) {
-        setHrOverrides(state.hrOverrides);
-      }
-      if (state.settings) {
-        setSettings(state.settings);
-      }
-      setSyncStatus(
-        source === 'firebase'
-          ? 'ซิงก์ข้อมูลจาก Firebase Firestore สำเร็จ'
-          : 'โหลดข้อมูลล่าสุดจากเครื่อง (LocalStorage)'
-      );
     });
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [initialLeaveRecords, initialQuotaRecords]);
 
   // บันทึกการเปลี่ยนแปลงลง LocalStorage และ Firebase อัตโนมัติ
   const triggerSaveState = async (

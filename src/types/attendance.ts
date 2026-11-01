@@ -58,6 +58,8 @@ export interface LeaveFormRecord {
   note: string;
   isUnpaidLeave: boolean;
   isHistoricalCarryover: boolean;
+  isCrossMonth?: boolean;
+  dateValidationNote?: string;
 }
 
 export interface EmployeeQuotaRecord {
@@ -84,12 +86,14 @@ export interface HROverrideRecord {
   key: string;
   empKey: string;
   date: string;
+  employeeName?: string;
   overrideScanIn?: string;
   overrideScanOut?: string;
   overrideStatus?: DailyAuditRecord['scanStatus'];
   overrideLateCount?: number | null;
   overrideLateMinutes?: number | null;
   hrNote: string;
+  previousSummary?: string;
   updatedAt: string;
 }
 
@@ -216,6 +220,10 @@ export interface MonthlyLeaveUsageReportItem {
   endDate: string;
   hours: number;
   days: number;
+  totalRequestedHours?: number;
+  totalRequestedDays?: number;
+  isCrossMonth?: boolean;
+  dateValidationNote?: string;
   reason: string;
   status: string;
   note: string;
@@ -280,6 +288,7 @@ export interface MonthlyAuditOutput {
   lateSummaryReport: LateSummaryReportItem[];
   unpaidAndOtherLeaveReport: UnpaidAndOtherLeaveReportItem[];
   monthlyLeaveUsageReport: MonthlyLeaveUsageReportItem[];
+  crossMonthOrFutureLeaves: MonthlyLeaveUsageReportItem[];
   activitySummaryReport: MonthlyActivitySummaryItem[];
   activityGrandTotal: {
     sickDays: number;

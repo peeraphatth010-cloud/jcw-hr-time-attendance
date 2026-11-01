@@ -1,7 +1,4 @@
-// ฟังก์ชันจัดการวันที่และเวลาตามกฎ Attendance_Audit_Business_Rules_JCW
-// ระวังเรื่องรูปแบบวันที่:
-// 1. ไฟล์บันทึกเข้างาน (คอลัมน์ G) เรียง YYYY-MM-DD (ปี ค.ศ. - เดือน - วันที่)
-// 2. ไฟล์แบบฟอร์มลาออนไลน์ (คอลัมน์ I, J) เรียง DD/MM/YYYY (วันที่ / เดือน / ปี) หรือ YYYY-MM-DD
+// ฟังก์ชันจัดการวันที่ เวลา และการปัดเศษมาตรฐานเดียวกันทั้งระบบ (Attendance_Audit_Business_Rules_JCW)
 
 const THAI_MONTH_NAMES: Record<string, string> = {
   '01': 'มกราคม',
@@ -18,7 +15,30 @@ const THAI_MONTH_NAMES: Record<string, string> = {
   '12': 'ธันวาคม',
 };
 
-const THAI_DAY_NAMES = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์'];
+const THAI_DAY_NAMES = [
+  'อาทิตย์',
+  'จันทร์',
+  'อังคาร',
+  'พุธ',
+  'พฤหัส',
+  'ศุกร์',
+  'เสาร์',
+];
+
+/**
+ * ปัดเศษทศนิยม 2 ตำแหน่งด้วยสูตรมาตรฐานเดียวกันทั้งระบบ (Half-Up)
+ */
+export function round2(val: number | null | undefined): number {
+  if (val === null || val === undefined || isNaN(val)) return 0;
+  return Math.round((val + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * แสดงผลตัวเลขทศนิยม 2 ตำแหน่งเสมอ เช่น 1 -> "1.00", 0.5 -> "0.50", 0.25 -> "0.25"
+ */
+export function format2(val: number | null | undefined): string {
+  return round2(val).toFixed(2);
+}
 
 /**
  * แปลงปี พ.ศ. (เช่น 2568, 2569) เป็น ค.ศ. (2025, 2026)
@@ -29,7 +49,6 @@ export function normalizeYear(y: number): number {
     return y - 543;
   }
   if (y < 100) {
-    // ถ้าเป็น 68, 69 (พ.ศ. ย่อ) -> 2568 - 543 = 2025
     if (y >= 60) {
       return 2500 + y - 543;
     }
@@ -50,7 +69,6 @@ export function normalizeDateStr(
 ): string {
   if (raw === null || raw === undefined) return '';
 
-  // กรณีเป็น Date object
   if (raw instanceof Date && !isNaN(raw.getTime())) {
     const y = normalizeYear(raw.getFullYear());
     const m = String(raw.getMonth() + 1).padStart(2, '0');
@@ -58,7 +76,6 @@ export function normalizeDateStr(
     return `${y}-${m}-${d}`;
   }
 
-  // กรณีเป็นตัวเลข Serial Number ของ Excel (เช่น 46327)
   if (typeof raw === 'number' && raw > 20000 && raw < 80000) {
     const utcDays = Math.floor(raw - 25569);
     const utcValue = utcDays * 86400;
@@ -72,7 +89,6 @@ export function normalizeDateStr(
   const str = String(raw).trim();
   if (!str || str === '-') return '';
 
-  // ตัดส่วนเวลาออกถ้ามี เช่น "2026-10-01 00:00:00" หรือ "15/09/2026, 9:58:23"
   const datePart = str.split(/[\s,T]+/)[0].trim();
 
   // 1. รูปแบบที่ขึ้นต้นด้วยปี 4 หลัก: YYYY-MM-DD หรือ YYYY/MM/DD
@@ -81,11 +97,9 @@ export function normalizeDateStr(
     const y = normalizeYear(parseInt(ymdMatch[1], 10));
     const p2 = parseInt(ymdMatch[2], 10);
     const p3 = parseInt(ymdMatch[3], 10);
-    // กรณี YYYY-MM-DD ปกติ
     if (p2 >= 1 && p2 <= 12 && p3 >= 1 && p3 <= 31) {
       return `${y}-${String(p2).padStart(2, '0')}-${String(p3).padStart(2, '0')}`;
     }
-    // เผื่อกรณี YYYY-DD-MM
     if (p3 >= 1 && p3 <= 12 && p2 >= 1 && p2 <= 31) {
       return `${y}-${String(p3).padStart(2, '0')}-${String(p2).padStart(2, '0')}`;
     }
@@ -104,12 +118,10 @@ export function normalizeDateStr(
       if (first >= 1 && first <= 31 && second >= 1 && second <= 12) {
         return `${y}-${String(second).padStart(2, '0')}-${String(first).padStart(2, '0')}`;
       }
-      // fallback ถ้า second > 12 แปลว่าถูกแปลงเป็น MM/DD/YYYY มาจาก CSV
       if (second >= 1 && second <= 31 && first >= 1 && first <= 12) {
         return `${y}-${String(first).padStart(2, '0')}-${String(second).padStart(2, '0')}`;
       }
     } else {
-      // สำหรับไฟล์ทั่วไป ถ้าอันแรก > 12 แปลว่าเป็น DD/MM/YYYY แน่นอน
       if (first > 12 && second >= 1 && second <= 12) {
         return `${y}-${String(second).padStart(2, '0')}-${String(first).padStart(2, '0')}`;
       }
@@ -126,9 +138,86 @@ export function normalizeDateStr(
 }
 
 /**
+ * ตรวจสอบความถูกต้องของช่วงวันที่ลา และตรวจจับกรณีลาข้ามเดือนหรือลาล่วงหน้าต่างเดือน
+ */
+export function inspectLeaveDateRange(
+  startRaw: string,
+  endRaw: string,
+  timestampRaw?: string
+): {
+  startDate: string;
+  endDate: string;
+  isSwapped: boolean;
+  isCrossMonth: boolean;
+  monthsCovered: string[];
+  submittedYearMonth: string;
+  isAdvanceOrBackdatedMonth: boolean;
+  dateNote: string;
+} {
+  let s = startRaw || '';
+  let e = endRaw || s;
+  let isSwapped = false;
+
+  if (s && e && s > e) {
+    const tmp = s;
+    s = e;
+    e = tmp;
+    isSwapped = true;
+  }
+
+  const weekdays = getWeekdaysInRange(s, e);
+  const monthSet = new Set<string>();
+  for (const d of weekdays) {
+    monthSet.add(d.slice(0, 7));
+  }
+  if (monthSet.size === 0 && s.length >= 7) {
+    monthSet.add(s.slice(0, 7));
+  }
+  const monthsCovered = Array.from(monthSet).sort();
+  const isCrossMonth =
+    monthsCovered.length > 1 ||
+    (s.length >= 7 && e.length >= 7 && s.slice(0, 7) !== e.slice(0, 7));
+
+  const tsNormalized = normalizeDateStr(timestampRaw, 'LEAVE_DMY');
+  const submittedYearMonth = tsNormalized ? tsNormalized.slice(0, 7) : '';
+  const isAdvanceOrBackdatedMonth = Boolean(
+    submittedYearMonth &&
+      s.length >= 7 &&
+      submittedYearMonth !== s.slice(0, 7)
+  );
+
+  const notes: string[] = [];
+  if (isSwapped) {
+    notes.push('สลับวันเริ่มต้น-สิ้นสุดอัตโนมัติ');
+  }
+  if (isCrossMonth) {
+    notes.push(`ลาข้ามเดือน (${monthsCovered.join(' → ')})`);
+  }
+  if (isAdvanceOrBackdatedMonth) {
+    notes.push(
+      `ยื่นในเดือน ${submittedYearMonth} สำหรับเดือน ${s.slice(0, 7)}`
+    );
+  }
+
+  return {
+    startDate: s,
+    endDate: e,
+    isSwapped,
+    isCrossMonth,
+    monthsCovered,
+    submittedYearMonth,
+    isAdvanceOrBackdatedMonth,
+    dateNote: notes.join(' | '),
+  };
+}
+
+/**
  * แปลงวันที่ YYYY-MM-DD เป็นรูปแบบแสดงผลภาษาไทย เช่น 01/10/2026 (พฤหัส)
  */
-export function formatDateDisplay(ymd: string, includeDayName = false): string {
+export function formatDateDisplay(
+  ymd: string,
+  includeDayName = false
+): string {
   if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd || '-';
   const [y, m, d] = ymd.split('-');
   if (!includeDayName) {
@@ -173,9 +262,10 @@ export function formatYearMonthThai(yearMonth: string): string {
 
 /**
  * แปลงข้อความเวลา เช่น "08:19:05" หรือ "08:15" เป็นจำนวนวินาทีตั้งแต่ 00:00:00
- * คืนค่า null ถ้าไม่มีข้อมูล ("-" หรือว่าง)
  */
-export function parseTimeToSeconds(timeStr: string | undefined | null): number | null {
+export function parseTimeToSeconds(
+  timeStr: string | undefined | null
+): number | null {
   if (!timeStr) return null;
   const cleaned = String(timeStr).trim();
   if (!cleaned || cleaned === '-') return null;
@@ -187,7 +277,14 @@ export function parseTimeToSeconds(timeStr: string | undefined | null): number |
   const minutes = parseInt(match[2], 10);
   const seconds = match[3] ? parseInt(match[3], 10) : 0;
 
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
+  if (
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59 ||
+    seconds < 0 ||
+    seconds > 59
+  ) {
     return null;
   }
   return hours * 3600 + minutes * 60 + seconds;
@@ -195,9 +292,6 @@ export function parseTimeToSeconds(timeStr: string | undefined | null): number |
 
 /**
  * คำนวณการมาสายและผลต่อเบี้ยขยันตามกฎปกติ (เริ่มงาน 08:00, อนุโลมถึง 08:15, สายตั้งแต่ 08:16)
- * - <= 08:00 (ไม่เกินนาทีที่ 08:00): ปกติ ไม่สาย ได้สิทธิเบี้ยขยัน
- * - 08:01 - 08:15: ไม่ถือว่าสาย (0 ครั้ง, 0 นาที) แต่เสียสิทธิเบี้ยขยัน
- * - >= 08:16: สาย 1 ครั้ง และคิดนาทีสายตั้งแต่นาทีหลัง 08:15 (เช่น 08:16 = 1 นาที, 08:19:05 = 4 นาที)
  */
 export function calculateStandardLate(
   scanIn: string,
@@ -222,14 +316,15 @@ export function calculateStandardLate(
     };
   }
 
-  const totalMinutes = Math.floor(sec / 60); // ตัดเศษวินาทีตามมาตรฐานตารางสแกนนิ้วบริษัท
-  const min0800 = 8 * 60; // 480
-  const min0815 = 8 * 60 + 15; // 495
+  const totalMinutes = Math.floor(sec / 60);
+  const min0800 = 8 * 60;
+  const min0815 = 8 * 60 + 15;
 
-  // ตรวจสอบว่าเกิน 08:00 น. หรือไม่ (ตามกฎ "08:01 - 08:15 เสียสิทธิเบี้ยขยัน")
-  const isAfter0800 = strictZeroSecondsForDiligence ? sec > 8 * 3600 : totalMinutes > min0800;
+  const isAfter0800 = strictZeroSecondsForDiligence
+    ? sec > 8 * 3600
+    : totalMinutes > min0800;
   const isGracePeriod0801To0815 = isAfter0800 && totalMinutes <= min0815;
-  const isLate = totalMinutes > min0815; // >= 08:16
+  const isLate = totalMinutes > min0815;
   const lateCount = isLate ? 1 : 0;
   const lateMinutes = isLate ? totalMinutes - min0815 : 0;
 
@@ -244,9 +339,7 @@ export function calculateStandardLate(
 }
 
 /**
- * คำนวณการมาสายสำหรับฝ่ายขายในวันทำงานถัดจากวันที่ "คาดว่าไปพบลูกค้า"
- * - อนุโลมให้เข้างานได้ถึง 09:00 น. โดยไม่ถือว่าสาย
- * - สแกนตั้งแต่ 09:01 น. ขึ้นไป ถือว่าสาย 1 ครั้ง และนับนาทีสายจากหลัง 09:00 น. (เช่น 09:09:41 = 9 นาที)
+ * คำนวณการมาสายสำหรับฝ่ายขายในวันทำงานถัดจากวันที่ "คาดว่าไปพบลูกค้า" (เกณฑ์ 09:00 น.)
  */
 export function calculateSalesNextDayLate(scanIn: string): {
   hasScanIn: boolean;
@@ -265,9 +358,9 @@ export function calculateSalesNextDayLate(scanIn: string): {
   }
 
   const totalMinutes = Math.floor(sec / 60);
-  const min0900 = 9 * 60; // 540
+  const min0900 = 9 * 60;
 
-  const isLate = totalMinutes > min0900; // >= 09:01
+  const isLate = totalMinutes > min0900;
   const lateCount = isLate ? 1 : 0;
   const lateMinutes = isLate ? totalMinutes - min0900 : 0;
 
@@ -280,9 +373,12 @@ export function calculateSalesNextDayLate(scanIn: string): {
 }
 
 /**
- * สร้างรายการวันที่ทำงาน (จันทร์ - ศุกร์) ทั้งหมดในช่วงวันที่กำหนด (รวมวันเริ่มต้นและวันสิ้นสุด)
+ * สร้างรายการวันที่ทำงาน (จันทร์ - ศุกร์) ทั้งหมดในช่วงวันที่กำหนด
  */
-export function getWeekdaysInRange(startYmd: string, endYmd: string): string[] {
+export function getWeekdaysInRange(
+  startYmd: string,
+  endYmd: string
+): string[] {
   if (!startYmd || !endYmd) return [];
   const start = new Date(`${startYmd}T00:00:00`);
   const end = new Date(`${endYmd}T00:00:00`);

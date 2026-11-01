@@ -1,22 +1,266 @@
 import * as XLSX from 'xlsx';
-import { MonthlyAuditOutput } from '../types/attendance';
-import { formatDateDisplay, formatYearMonthThai } from './dateAndTime';
+import { HROverrideRecord, MonthlyAuditOutput } from '../types/attendance';
+import {
+  format2,
+  formatDateDisplay,
+  formatYearMonthThai,
+} from './dateAndTime';
 
 /**
- * ส่งออกรายงานสรุปผล HR Time Attendance & Leave Audit ทั้ง 6 รายงานหลัก + ตารางตรวจสอบรายวัน เป็นไฟล์ Excel (.xlsx)
- * (ตัดคอลัมน์รหัสพนักงานและ ID บุคคลออกจากรายงานทั้งหมดตามความต้องการของผู้ใช้)
+ * แบบที่ 1: รายงานหัวหน้า / ผู้บริหาร (Manager Report)
+ * สั้น อ่านง่าย แสดงตัวเลขวันลา 2 ตำแหน่งเสมอ และตัดข้อมูลเทคนิคออกทั้งหมด
+ * (ไม่แสดงรหัสพนักงานและ ID บุคคลตามความต้องการของผู้ใช้)
  */
-export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
+export function exportManagerReportToExcel(audit: MonthlyAuditOutput): void {
   const wb = XLSX.utils.book_new();
   const monthLabel = formatYearMonthThai(audit.yearMonth);
 
+  const totalEmployees = audit.activitySummaryReport.length;
+  const latePeople = audit.lateSummaryReport.filter((l) => l.lateCount > 0);
+  const eligibleList = audit.diligenceReport.filter((d) => d.isEligible);
+  const ineligibleList = audit.diligenceReport.filter((d) => !d.isEligible);
+
   // ============================================================================
-  // ชีตที่ 1: รายงานผู้ได้รับเบี้ยขยัน
+  // ชีตที่ 1: หน้าสรุปผู้บริหาร 1 หน้า (Executive 1-Page Summary)
   // ============================================================================
-  const sheet1Rows = [
+  const execRows: (string | number)[][] = [
+    [`สรุปผู้บริหาร (Executive 1-Page Summary) — ประจำเดือน ${monthLabel}`],
+    ['รายงานสำหรับหัวหน้างานและผู้บริหาร (สั้น อ่านง่าย ตัดข้อมูลเทคนิค)'],
+    [],
+    ['หัวข้อสรุปสำคัญ', 'ตัวเลขสรุป', 'รายละเอียดประกอบ'],
+    [
+      '1. พนักงานทั้งหมดที่ตรวจสอบในเดือน',
+      `${totalEmployees} คน`,
+      `วันทำการที่มีข้อมูลในเดือนนี้ ${audit.workdaysInMonth.length} วัน`,
+    ],
+    [
+      '2. สถิติการมาสาย (กี่คน / กี่ครั้ง / กี่นาที)',
+      `${latePeople.length} คน / ${audit.activityGrandTotal.lateCount} ครั้ง / ${audit.activityGrandTotal.lateMinutes} นาที`,
+      latePeople.length > 0
+        ? latePeople
+            .map(
+              (p) =>
+                `${p.fullName} (${p.nickname}): ${p.lateCount} ครั้ง (${p.lateMinutes} นาที)`
+            )
+            .join(' | ')
+        : 'ไม่มีพนักงานมาสายในเดือนนี้',
+    ],
+    [
+      '3. ลาไม่รับค่าจ้าง (จำนวนวัน)',
+      `${format2(audit.activityGrandTotal.unpaidDays)} วัน (${format2(audit.activityGrandTotal.unpaidHours)} ชม.)`,
+      audit.unpaidAndOtherLeaveReport
+        .filter((u) => u.unpaidDays > 0)
+        .map(
+          (u) =>
+            `${u.fullName} (${u.nickname}): ${format2(u.unpaidDays)} วัน (${format2(u.unpaidHours)} ชม.)`
+        )
+        .join(' | ') || 'ไม่มีการลาไม่รับค่าจ้างในเดือนนี้',
+    ],
+    [
+      '4. ผู้ได้รับเบี้ยขยัน / ไม่ได้รับเบี้ยขยัน',
+      `ได้รับ ${eligibleList.length} คน / ไม่ได้รับ ${ineligibleList.length} คน`,
+      eligibleList.length > 0
+        ? `ผู้ได้รับเบี้ยขยัน: ${eligibleList.map((e) => `${e.fullName} (${e.nickname})`).join(', ')}`
+        : 'ไม่มีผู้ได้รับเบี้ยขยันในเดือนนี้',
+    ],
+    [
+      '5. รายการที่ต้องให้ HR ตรวจสอบ (HR Exception)',
+      `${audit.scanAnomalyRecords.length} รายการ`,
+      `สแกนเข้าแต่ไม่สแกนออก ${audit.scanAnomalyRecords.filter((r) => r.scanStatus === 'พบสแกนเข้า แต่ไม่พบสแกนออก').length} รายการ | ไม่สแกนเข้าแต่สแกนออก ${audit.scanAnomalyRecords.filter((r) => r.scanStatus === 'ไม่พบสแกนเข้า แต่พบสแกนออก').length} รายการ | คาดว่าไปพบลูกค้า/ไม่พบสแกน ${audit.scanAnomalyRecords.filter((r) => r.scanStatus === 'คาดว่าไปพบลูกค้า' || r.scanStatus === 'ไม่พบสแกนเข้า-ออกและไม่มีใบลา').length} รายการ`,
+    ],
+    [],
+    ['สรุปรายชื่อผู้ได้รับเบี้ยขยันและผู้ไม่ได้รับเบี้ยขยัน'],
+    ['ลำดับ', 'ชื่อ-นามสกุล', 'ชื่อเล่น', 'ตำแหน่ง', 'แผนก/ฝ่าย', 'สถานะเบี้ยขยัน', 'เหตุผลสรุป'],
+    ...audit.diligenceReport.map((item, idx) => [
+      idx + 1,
+      item.fullName,
+      item.nickname,
+      item.position,
+      item.department,
+      item.isEligible ? 'ได้รับเบี้ยขยัน' : 'ไม่ได้รับเบี้ยขยัน',
+      item.isEligible
+        ? 'มาทำงานตรงเวลาทุกวัน และลาไม่เกิน 1.00 วัน'
+        : item.disqualifyReasons.join(' / '),
+    ]),
+  ];
+  const wsExec = XLSX.utils.aoa_to_sheet(execRows);
+  XLSX.utils.book_append_sheet(wb, wsExec, '1_สรุปผู้บริหาร_1หน้า');
+
+  // ============================================================================
+  // ชีตที่ 2: ตารางสรุปภาพรวมรายบุคคลสำหรับหัวหน้า (สั้น อ่านง่าย)
+  // ============================================================================
+  const summaryRows: (string | number)[][] = [
+    [`สรุปภาพรวมการมาทำงานและการลารายบุคคล (รายงานหัวหน้า) — ประจำเดือน ${monthLabel}`],
+    [],
+    [
+      'ลำดับ',
+      'ชื่อ-นามสกุล',
+      'ชื่อเล่น',
+      'ตำแหน่ง',
+      'แผนก/ฝ่าย',
+      'มาสาย (ครั้ง)',
+      'เวลามาสายรวม (นาที)',
+      'ลาป่วย (วัน)',
+      'ลากิจ (วัน)',
+      'ลาพักร้อน (วัน)',
+      'ลาไม่รับค่าจ้าง (วัน)',
+      'ลาอื่นๆ (วัน)',
+      'รวมวันลาทั้งเดือน (วัน)',
+      'ผลการพิจารณาเบี้ยขยัน',
+    ],
+    ...audit.activitySummaryReport.map((item, idx) => [
+      idx + 1,
+      item.fullName,
+      item.nickname,
+      item.position,
+      item.department,
+      item.lateCount,
+      item.lateMinutes,
+      format2(item.sickDays),
+      format2(item.personalDays),
+      format2(item.vacationDays),
+      format2(item.unpaidDays),
+      format2(item.otherDays),
+      format2(item.totalLeaveDays),
+      item.diligenceEligible ? 'ได้รับเบี้ยขยัน' : 'ไม่ได้รับ',
+    ]),
+    [],
+    [
+      '',
+      'รวมทั้งบริษัท (Grand Total)',
+      '',
+      '',
+      '',
+      audit.activityGrandTotal.lateCount,
+      audit.activityGrandTotal.lateMinutes,
+      format2(audit.activityGrandTotal.sickDays),
+      format2(audit.activityGrandTotal.personalDays),
+      format2(audit.activityGrandTotal.vacationDays),
+      format2(audit.activityGrandTotal.unpaidDays),
+      format2(audit.activityGrandTotal.otherDays),
+      format2(audit.activityGrandTotal.totalLeaveDays),
+      `ได้รับ ${audit.activityGrandTotal.diligenceEligibleCount} คน`,
+    ],
+  ];
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+  XLSX.utils.book_append_sheet(wb, wsSummary, '2_สรุปรายคน_สาย_ลา_เบี้ยขยัน');
+
+  // ============================================================================
+  // ชีตที่ 3: สิทธิวันลาคงเหลือรายบุคคล (แสดงทศนิยม 2 ตำแหน่ง)
+  // ============================================================================
+  const quotaRows: (string | number)[][] = [
+    [`สรุปสิทธิวันลาคงเหลือรายบุคคล — ประจำเดือน ${monthLabel}`],
+    [],
+    [
+      'ลำดับ',
+      'ชื่อ-นามสกุล',
+      'ชื่อเล่น',
+      'ตำแหน่ง',
+      'แผนก/ฝ่าย',
+      'คงเหลือ ลาป่วย (วัน)',
+      'คงเหลือ ลากิจ (วัน)',
+      'คงเหลือ ลาพักร้อน (วัน)',
+      'คงเหลือ ลาอื่นๆ (วัน)',
+      `ใช้ในเดือน ${audit.yearMonth} - ลาป่วย (วัน)`,
+      `ใช้ในเดือน ${audit.yearMonth} - ลากิจ (วัน)`,
+      `ใช้ในเดือน ${audit.yearMonth} - ลาพักร้อน (วัน)`,
+      `ใช้ในเดือน ${audit.yearMonth} - ลาไม่รับค่าจ้าง/อื่นๆ (วัน)`,
+    ],
+    ...audit.quotaReport.map((q, idx) => [
+      idx + 1,
+      q.fullName,
+      q.nickname,
+      q.position,
+      q.department,
+      format2(q.sickRemaining),
+      format2(q.personalRemaining),
+      format2(q.vacationRemaining),
+      format2(q.otherRemaining),
+      format2(q.monthSickUsed),
+      format2(q.monthPersonalUsed),
+      format2(q.monthVacationUsed),
+      format2(q.monthOtherAndUnpaidUsed),
+    ]),
+  ];
+  const wsQuota = XLSX.utils.aoa_to_sheet(quotaRows);
+  XLSX.utils.book_append_sheet(wb, wsQuota, '3_สิทธิวันลาคงเหลือ');
+
+  XLSX.writeFile(wb, `JCW_รายงานหัวหน้า_Manager_Report_${audit.yearMonth}.xlsx`);
+}
+
+/**
+ * แบบที่ 2: รายงาน HR / Payroll ฉบับสมบูรณ์ (HR & Payroll Detailed Report)
+ * มีรายละเอียดครบทั้ง 6 รายงานหลัก + หน้าสรุปผู้บริหาร + HR Exception 32 รายการ + สแกนต้นฉบับ/หมายเหตุ + ประวัติการแก้ไข (Audit Log)
+ * แสดงตัวเลขวันลาเป็นทศนิยม 2 ตำแหน่งเสมอ และไม่แสดงรหัสพนักงาน/ID บุคคล
+ */
+export function exportHRPayrollReportToExcel(
+  audit: MonthlyAuditOutput,
+  hrOverrides: Record<string, HROverrideRecord> = {}
+): void {
+  const wb = XLSX.utils.book_new();
+  const monthLabel = formatYearMonthThai(audit.yearMonth);
+
+  const totalEmployees = audit.activitySummaryReport.length;
+  const latePeople = audit.lateSummaryReport.filter((l) => l.lateCount > 0);
+  const eligibleList = audit.diligenceReport.filter((d) => d.isEligible);
+  const ineligibleList = audit.diligenceReport.filter((d) => !d.isEligible);
+
+  // ============================================================================
+  // ชีตที่ 1: หน้าสรุปผู้บริหาร 1 หน้า (Executive 1-Page Summary)
+  // ============================================================================
+  const sheet0Rows: (string | number)[][] = [
+    [`หน้าสรุปผู้บริหาร 1 หน้า (Executive Summary) — ประจำเดือน ${monthLabel}`],
+    [],
+    ['ตัวชี้วัดสำคัญก่อนทำเงินเดือน', 'ผลลัพธ์', 'รายละเอียด'],
+    [
+      '1. พนักงานทั้งหมด',
+      `${totalEmployees} คน`,
+      `ตรวจสอบจากวันทำงานจริง ${audit.workdaysInMonth.length} วันทำการ`,
+    ],
+    [
+      '2. มาสายกี่คน / กี่ครั้ง / กี่นาที',
+      `${latePeople.length} คน / ${audit.activityGrandTotal.lateCount} ครั้ง / ${audit.activityGrandTotal.lateMinutes} นาที`,
+      latePeople
+        .map(
+          (p) =>
+            `${p.fullName} (${p.nickname}): ${p.lateCount} ครั้ง (${p.lateMinutes} นาที)`
+        )
+        .join(' | ') || 'ไม่มีผู้มาสาย',
+    ],
+    [
+      '3. ลาไม่รับค่าจ้างกี่วัน',
+      `${format2(audit.activityGrandTotal.unpaidDays)} วัน (${format2(audit.activityGrandTotal.unpaidHours)} ชม.)`,
+      audit.unpaidAndOtherLeaveReport
+        .filter((u) => u.unpaidDays > 0)
+        .map(
+          (u) =>
+            `${u.fullName} (${u.nickname}): ${format2(u.unpaidDays)} วัน (${format2(u.unpaidHours)} ชม.)`
+        )
+        .join(' | ') || '0.00 วัน',
+    ],
+    [
+      '4. ผู้ได้รับ / ไม่ได้รับเบี้ยขยัน',
+      `ได้รับ ${eligibleList.length} คน / ไม่ได้รับ ${ineligibleList.length} คน`,
+      eligibleList.length > 0
+        ? `ผู้ได้รับ: ${eligibleList.map((e) => `${e.fullName} (${e.nickname})`).join(', ')}`
+        : 'ไม่มีผู้ได้รับเบี้ยขยัน',
+    ],
+    [
+      '5. รายการที่ต้องให้ HR ตรวจสอบ (HR Exception)',
+      `${audit.scanAnomalyRecords.length} รายการ`,
+      `สแกนไม่ครบหรือฝ่ายขายคาดว่าไปพบลูกค้า ${audit.scanAnomalyRecords.length} รายการ (ดูรายละเอียดในชีต 8_HR_Exception)`,
+    ],
+  ];
+  const ws0 = XLSX.utils.aoa_to_sheet(sheet0Rows);
+  XLSX.utils.book_append_sheet(wb, ws0, '1_สรุปผู้บริหาร');
+
+  // ============================================================================
+  // ชีตที่ 2: รายงานที่ 1 ผู้ได้รับเบี้ยขยัน
+  // ============================================================================
+  const sheet1Rows: (string | number)[][] = [
     [`รายงานที่ 1: สรุปรายชื่อผู้ได้รับเบี้ยขยัน ประจำเดือน ${monthLabel}`],
     [
-      'เกณฑ์บริษัท: (1) พนักงานทุกแผนก (รวมฝ่ายขาย ยกเว้นตำแหน่งเจ้าหน้าที่ฝ่ายขาย) (2) สแกนเข้างานไม่เกิน 08:00 น. ทุกวันทำงาน (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.0 วัน',
+      'เกณฑ์บริษัท: (1) พนักงานทุกแผนก (รวมฝ่ายขาย ยกเว้นตำแหน่งเจ้าหน้าที่ฝ่ายขาย) (2) สแกนเข้างานไม่เกิน 08:00 น. ทุกวันทำงาน (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.00 วัน',
     ],
     [],
     [
@@ -40,17 +284,17 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       item.isEligible ? 'ได้รับเบี้ยขยัน' : 'ไม่ได้รับเบี้ยขยัน',
       item.daysWorked,
       item.daysScanAfter0800,
-      item.totalLeaveDays,
+      format2(item.totalLeaveDays),
       item.isEligible
         ? 'ผ่านเกณฑ์ครบทั้ง 3 ข้อ'
         : item.disqualifyReasons.join(' | '),
     ]),
   ];
   const ws1 = XLSX.utils.aoa_to_sheet(sheet1Rows);
-  XLSX.utils.book_append_sheet(wb, ws1, '1_เบี้ยขยัน');
+  XLSX.utils.book_append_sheet(wb, ws1, '2_เบี้ยขยัน');
 
   // ============================================================================
-  // ชีตที่ 2: รายงานสรุปการมาสาย
+  // ชีตที่ 3: รายงานที่ 2 สรุปการมาสาย
   // ============================================================================
   const sheet2Rows: (string | number)[][] = [
     [`รายงานที่ 2: สรุปการเข้างานสาย ประจำเดือน ${monthLabel}`],
@@ -94,20 +338,20 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       '',
       audit.activityGrandTotal.lateCount,
       audit.activityGrandTotal.lateMinutes,
-      '',
+      `ผู้มาสาย ${latePeople.length} คน`,
     ],
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(sheet2Rows);
-  XLSX.utils.book_append_sheet(wb, ws2, '2_สรุปมาสาย');
+  XLSX.utils.book_append_sheet(wb, ws2, '3_สรุปมาสาย');
 
   // ============================================================================
-  // ชีตที่ 3: รายงานการลาไม่รับค่าจ้าง และ ลาอื่นๆ
+  // ชีตที่ 4: รายงานที่ 3 การลาไม่รับค่าจ้าง และ ลาอื่นๆ
   // ============================================================================
   const sheet3Rows: (string | number)[][] = [
     [
       `รายงานที่ 3: สรุปการลาไม่รับค่าจ้าง และ ลาอื่นๆ ประจำเดือน ${monthLabel}`,
     ],
-    ['อัตราการแปลงเวลา: 8 ชั่วโมง = 1 วันทำงาน'],
+    ['อัตราการแปลงเวลา: 8 ชั่วโมง = 1.00 วันทำงาน (แสดงทศนิยม 2 ตำแหน่งมาตรฐานเดียวกัน)'],
     [],
     [
       'ลำดับ',
@@ -129,17 +373,17 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       item.nickname,
       item.position,
       item.department,
-      item.unpaidDays,
-      item.unpaidHours,
-      item.otherDays,
-      item.otherHours,
-      item.totalDays,
-      item.totalHours,
+      format2(item.unpaidDays),
+      format2(item.unpaidHours),
+      format2(item.otherDays),
+      format2(item.otherHours),
+      format2(item.totalDays),
+      format2(item.totalHours),
       item.details.length > 0
         ? item.details
             .map(
               (d) =>
-                `${formatDateDisplay(d.date)}: ${d.type} ${d.days} วัน (${d.hours} ชม. - ${d.reason})`
+                `${formatDateDisplay(d.date)}: ${d.type} ${format2(d.days)} วัน (${format2(d.hours)} ชม. - ${d.reason})`
             )
             .join(' | ')
         : '-',
@@ -151,30 +395,25 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       '',
       '',
       '',
-      audit.activityGrandTotal.unpaidDays,
-      audit.activityGrandTotal.unpaidHours,
-      audit.activityGrandTotal.otherDays,
-      audit.activityGrandTotal.otherHours,
-      Number(
-        (
-          audit.activityGrandTotal.unpaidDays +
-          audit.activityGrandTotal.otherDays
-        ).toFixed(4)
+      format2(audit.activityGrandTotal.unpaidDays),
+      format2(audit.activityGrandTotal.unpaidHours),
+      format2(audit.activityGrandTotal.otherDays),
+      format2(audit.activityGrandTotal.otherHours),
+      format2(
+        audit.activityGrandTotal.unpaidDays + audit.activityGrandTotal.otherDays
       ),
-      Number(
-        (
-          audit.activityGrandTotal.unpaidHours +
+      format2(
+        audit.activityGrandTotal.unpaidHours +
           audit.activityGrandTotal.otherHours
-        ).toFixed(2)
       ),
       '',
     ],
   ];
   const ws3 = XLSX.utils.aoa_to_sheet(sheet3Rows);
-  XLSX.utils.book_append_sheet(wb, ws3, '3_ลาไม่รับค่าจ้าง_อื่นๆ');
+  XLSX.utils.book_append_sheet(wb, ws3, '4_ลาไม่รับค่าจ้าง_อื่นๆ');
 
   // ============================================================================
-  // ชีตที่ 4: รายงานการใช้สิทธิการลาในเดือน
+  // ชีตที่ 5: รายงานที่ 4 การใช้สิทธิการลาในเดือน & การตรวจสอบวันลาข้ามเดือน
   // ============================================================================
   const sheet4Rows: (string | number)[][] = [
     [`รายงานที่ 4: รายละเอียดการใช้สิทธิการลาในเดือน ประจำเดือน ${monthLabel}`],
@@ -185,16 +424,16 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       'ชื่อเล่น',
       'ตำแหน่ง',
       'แผนก/ฝ่าย',
-      'ประเภทการลา',
+      'ประเภทการลา (มาตรฐาน)',
       'สถานะรับค่าจ้าง',
       'ตั้งแต่วันที่',
       'ถึงวันที่',
-      'จำนวนชั่วโมงที่ใช้ในเดือน (ชม.)',
-      'จำนวนวันที่ใช้ในเดือน (วัน)',
+      'จำนวนวันที่ใช้ในเดือนนี้ (วัน)',
+      'จำนวนชั่วโมงในเดือนนี้ (ชม.)',
       'เหตุผลการลา',
       'สถานะอนุมัติ',
+      'การตรวจสอบวันที่/ข้ามเดือน',
       'แหล่งข้อมูล',
-      'หมายเหตุ',
     ],
     ...audit.monthlyLeaveUsageReport.map((item, idx) => [
       idx + 1,
@@ -206,19 +445,51 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       item.isUnpaid ? 'ไม่รับค่าจ้าง' : 'ตามสิทธิ์ปกติ',
       formatDateDisplay(item.startDate),
       formatDateDisplay(item.endDate),
-      item.hours,
-      item.days,
+      format2(item.days),
+      format2(item.hours),
       item.reason,
       item.status,
+      item.dateValidationNote || 'ปกติ (ภายในเดือน)',
       item.source,
-      item.note,
+    ]),
+    [],
+    [
+      `รายการตรวจพบใบลาข้ามเดือน หรือ ใบลายื่นล่วงหน้าสำหรับเดือนอื่น (${audit.crossMonthOrFutureLeaves.length} รายการ)`,
+    ],
+    [
+      'ลำดับ',
+      'ชื่อ-นามสกุล',
+      'ชื่อเล่น',
+      'ตำแหน่ง',
+      'แผนก/ฝ่าย',
+      'ประเภทการลา',
+      'ตั้งแต่วันที่',
+      'ถึงวันที่',
+      'จำนวนวันที่หักในเดือนนี้ (วัน)',
+      'จำนวนวันทั้งหมดในใบลา (วัน)',
+      'ผลการตรวจสอบวันที่ข้ามเดือน / ล่วงหน้า',
+      'เหตุผลการลา',
+    ],
+    ...audit.crossMonthOrFutureLeaves.map((item, idx) => [
+      idx + 1,
+      item.fullName,
+      item.nickname,
+      item.position,
+      item.department,
+      item.leaveType,
+      formatDateDisplay(item.startDate),
+      formatDateDisplay(item.endDate),
+      format2(item.days),
+      format2(item.totalRequestedDays ?? item.days),
+      item.dateValidationNote || '-',
+      item.reason,
     ]),
   ];
   const ws4 = XLSX.utils.aoa_to_sheet(sheet4Rows);
-  XLSX.utils.book_append_sheet(wb, ws4, '4_การใช้สิทธิลาในเดือน');
+  XLSX.utils.book_append_sheet(wb, ws4, '5_การใช้สิทธิลา_ข้ามเดือน');
 
   // ============================================================================
-  // ชีตที่ 5: สรุปกิจกรรมการลาและมาสาย (รายบุคคล + รวมทั้งบริษัท)
+  // ชีตที่ 6: รายงานที่ 5 สรุปกิจกรรมการลาและมาสาย (รายบุคคล + รวมทั้งบริษัท)
   // ============================================================================
   const sheet5Rows: (string | number)[][] = [
     [
@@ -253,18 +524,18 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       item.nickname,
       item.position,
       item.department,
-      item.sickDays,
-      item.sickHours,
-      item.personalDays,
-      item.personalHours,
-      item.vacationDays,
-      item.vacationHours,
-      item.unpaidDays,
-      item.unpaidHours,
-      item.otherDays,
-      item.otherHours,
-      item.totalLeaveDays,
-      item.totalLeaveHours,
+      format2(item.sickDays),
+      format2(item.sickHours),
+      format2(item.personalDays),
+      format2(item.personalHours),
+      format2(item.vacationDays),
+      format2(item.vacationHours),
+      format2(item.unpaidDays),
+      format2(item.unpaidHours),
+      format2(item.otherDays),
+      format2(item.otherHours),
+      format2(item.totalLeaveDays),
+      format2(item.totalLeaveHours),
       item.lateCount,
       item.lateMinutes,
       item.diligenceEligible ? 'ได้รับ' : 'ไม่ได้รับ',
@@ -276,28 +547,28 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       '',
       '',
       '',
-      audit.activityGrandTotal.sickDays,
-      audit.activityGrandTotal.sickHours,
-      audit.activityGrandTotal.personalDays,
-      audit.activityGrandTotal.personalHours,
-      audit.activityGrandTotal.vacationDays,
-      audit.activityGrandTotal.vacationHours,
-      audit.activityGrandTotal.unpaidDays,
-      audit.activityGrandTotal.unpaidHours,
-      audit.activityGrandTotal.otherDays,
-      audit.activityGrandTotal.otherHours,
-      audit.activityGrandTotal.totalLeaveDays,
-      audit.activityGrandTotal.totalLeaveHours,
+      format2(audit.activityGrandTotal.sickDays),
+      format2(audit.activityGrandTotal.sickHours),
+      format2(audit.activityGrandTotal.personalDays),
+      format2(audit.activityGrandTotal.personalHours),
+      format2(audit.activityGrandTotal.vacationDays),
+      format2(audit.activityGrandTotal.vacationHours),
+      format2(audit.activityGrandTotal.unpaidDays),
+      format2(audit.activityGrandTotal.unpaidHours),
+      format2(audit.activityGrandTotal.otherDays),
+      format2(audit.activityGrandTotal.otherHours),
+      format2(audit.activityGrandTotal.totalLeaveDays),
+      format2(audit.activityGrandTotal.totalLeaveHours),
       audit.activityGrandTotal.lateCount,
       audit.activityGrandTotal.lateMinutes,
       `ได้รับ ${audit.activityGrandTotal.diligenceEligibleCount} คน`,
     ],
   ];
   const ws5 = XLSX.utils.aoa_to_sheet(sheet5Rows);
-  XLSX.utils.book_append_sheet(wb, ws5, '5_สรุปกิจกรรมลาและสาย');
+  XLSX.utils.book_append_sheet(wb, ws5, '6_สรุปกิจกรรมลาและสาย');
 
   // ============================================================================
-  // ชีตที่ 6: สิทธิคงเหลือแต่ละบุคคล
+  // ชีตที่ 7: รายงานที่ 6 สิทธิคงเหลือแต่ละบุคคล (ทศนิยม 2 ตำแหน่ง)
   // ============================================================================
   const sheet6Rows: (string | number)[][] = [
     [
@@ -333,33 +604,77 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       item.nickname,
       item.position,
       item.department,
-      item.sickQuota,
-      item.sickUsedTotal,
-      item.sickRemaining,
-      item.personalQuota,
-      item.personalUsedTotal,
-      item.personalRemaining,
-      item.vacationQuota,
-      item.vacationUsedTotal,
-      item.vacationRemaining,
-      item.otherQuota,
-      item.otherUsedTotal,
-      item.otherRemaining,
-      item.monthSickUsed,
-      item.monthPersonalUsed,
-      item.monthVacationUsed,
-      item.monthOtherAndUnpaidUsed,
+      format2(item.sickQuota),
+      format2(item.sickUsedTotal),
+      format2(item.sickRemaining),
+      format2(item.personalQuota),
+      format2(item.personalUsedTotal),
+      format2(item.personalRemaining),
+      format2(item.vacationQuota),
+      format2(item.vacationUsedTotal),
+      format2(item.vacationRemaining),
+      format2(item.otherQuota),
+      format2(item.otherUsedTotal),
+      format2(item.otherRemaining),
+      format2(item.monthSickUsed),
+      format2(item.monthPersonalUsed),
+      format2(item.monthVacationUsed),
+      format2(item.monthOtherAndUnpaidUsed),
     ]),
   ];
   const ws6 = XLSX.utils.aoa_to_sheet(sheet6Rows);
-  XLSX.utils.book_append_sheet(wb, ws6, '6_สิทธิคงเหลือรายบุคคล');
+  XLSX.utils.book_append_sheet(wb, ws6, '7_สิทธิคงเหลือรายบุคคล');
 
   // ============================================================================
-  // ชีตที่ 7: ตารางตรวจสอบเวลาเข้า-ออกรายวัน & หมายเหตุ HR
+  // ชีตที่ 8: หน้า HR Exception (เฉพาะรายการผิดปกติที่ต้องให้ HR ตรวจสอบ)
   // ============================================================================
-  const sheet7Rows: (string | number)[][] = [
+  const sheet8Rows: (string | number)[][] = [
     [
-      `ตารางตรวจสอบการสแกนนิ้วรายวัน และบันทึกการแก้ไข/หมายเหตุจาก HR ประจำเดือน ${monthLabel}`,
+      `หน้า HR Exception: รายการสแกนนิ้วผิดปกติที่ต้องให้ HR ตรวจสอบ (${audit.scanAnomalyRecords.length} รายการ) — ประจำเดือน ${monthLabel}`,
+    ],
+    [],
+    [
+      'ลำดับ',
+      'วันที่',
+      'วันของสัปดาห์',
+      'ชื่อ-นามสกุล',
+      'ชื่อเล่น',
+      'ตำแหน่ง',
+      'แผนก/ฝ่าย',
+      'สแกนเข้า (ต้นฉบับ)',
+      'สแกนออก (ต้นฉบับ)',
+      'เวลาเข้าที่ใช้คำนวณ',
+      'เวลาออกที่ใช้คำนวณ',
+      'สถานะผิดปกติ / แจ้งเตือน HR',
+      'หมายเหตุในชีตเดิม',
+      'หมายเหตุจาก HR (Override)',
+    ],
+    ...audit.scanAnomalyRecords.map((r, idx) => [
+      idx + 1,
+      formatDateDisplay(r.date),
+      r.dayOfWeek,
+      r.fullName,
+      r.nickname,
+      r.position,
+      r.department,
+      r.originalScanIn,
+      r.originalScanOut,
+      r.effectiveScanIn,
+      r.effectiveScanOut,
+      r.alertMessage || r.scanStatus,
+      r.sheetNote || '-',
+      r.hrNote || '-',
+    ]),
+  ];
+  const ws8 = XLSX.utils.aoa_to_sheet(sheet8Rows);
+  XLSX.utils.book_append_sheet(wb, ws8, '8_HR_Exception');
+
+  // ============================================================================
+  // ชีตที่ 9: ตารางตรวจสอบสแกนนิ้วรายวันทั้งหมด (สแกนต้นฉบับ + หมายเหตุ)
+  // ============================================================================
+  const sheet9Rows: (string | number)[][] = [
+    [
+      `ตารางตรวจสอบการสแกนนิ้วรายวัน (สแกนต้นฉบับ เวลาที่ใช้คำนวณ และหมายเหตุ) ประจำเดือน ${monthLabel}`,
     ],
     [],
     [
@@ -399,14 +714,87 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
       r.lateMinutes,
       r.alertMessage || r.scanStatus,
       r.salesStatus || '-',
-      r.totalLeaveDaysOnDate,
+      format2(r.totalLeaveDaysOnDate),
       r.leaveDetails.join('; '),
       r.sheetNote,
       r.hrNote,
     ]),
   ];
-  const ws7 = XLSX.utils.aoa_to_sheet(sheet7Rows);
-  XLSX.utils.book_append_sheet(wb, ws7, '7_ตรวจสอบสแกนนิ้วรายวัน');
+  const ws9 = XLSX.utils.aoa_to_sheet(sheet9Rows);
+  XLSX.utils.book_append_sheet(wb, ws9, '9_สแกนต้นฉบับและหมายเหตุ');
 
-  XLSX.writeFile(wb, `JCW_HR_Attendance_Report_${audit.yearMonth}.xlsx`);
+  // ============================================================================
+  // ชีตที่ 10: ประวัติการแก้ไขของ HR (Audit Log / Edit History)
+  // ============================================================================
+  const overrideList = Object.values(hrOverrides).sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+  const sheet10Rows: (string | number)[][] = [
+    [`ประวัติการแก้ไขข้อมูลและหมายเหตุโดย HR (Audit Log) — ประจำเดือน ${monthLabel}`],
+    [],
+    [
+      'ลำดับ',
+      'วันที่รายการ',
+      'ชื่อพนักงาน',
+      'ข้อมูลก่อนแก้ไข (ต้นฉบับ)',
+      'เวลาเข้าที่ปรับแก้',
+      'เวลาออกที่ปรับแก้',
+      'สถานะที่ปรับแก้',
+      'ปรับจำนวนสาย (ครั้ง)',
+      'ปรับนาทีสาย (นาที)',
+      'หมายเหตุจาก HR',
+      'วันเวลาที่บันทึกการแก้ไข',
+    ],
+    ...(overrideList.length > 0
+      ? overrideList.map((ov, idx) => [
+          idx + 1,
+          formatDateDisplay(ov.date),
+          ov.employeeName || '-',
+          ov.previousSummary || 'ตามข้อมูลสแกนนิ้วต้นฉบับ',
+          ov.overrideScanIn || '(ใช้ค่าเดิม)',
+          ov.overrideScanOut || '(ใช้ค่าเดิม)',
+          ov.overrideStatus || '(คำนวณอัตโนมัติ)',
+          ov.overrideLateCount !== undefined && ov.overrideLateCount !== null
+            ? ov.overrideLateCount
+            : '(คำนวณอัตโนมัติ)',
+          ov.overrideLateMinutes !== undefined &&
+          ov.overrideLateMinutes !== null
+            ? ov.overrideLateMinutes
+            : '(คำนวณอัตโนมัติ)',
+          ov.hrNote || '-',
+          ov.updatedAt || '-',
+        ])
+      : [
+          [
+            '-',
+            '-',
+            'ยังไม่มีประวัติการแก้ไขข้อมูลในเดือนนี้',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+          ],
+        ]),
+  ];
+  const ws10 = XLSX.utils.aoa_to_sheet(sheet10Rows);
+  XLSX.utils.book_append_sheet(wb, ws10, '10_ประวัติการแก้ไข_HR');
+
+  XLSX.writeFile(
+    wb,
+    `JCW_รายงาน_HR_Payroll_Detailed_${audit.yearMonth}.xlsx`
+  );
+}
+
+/**
+ * ฟังก์ชันหลักเดิม (คงไว้เพื่อความเข้ากันได้) ชี้ไปยังรายงาน HR/Payroll ฉบับสมบูรณ์
+ */
+export function exportMonthlyAuditToExcel(
+  audit: MonthlyAuditOutput,
+  hrOverrides: Record<string, HROverrideRecord> = {}
+): void {
+  exportHRPayrollReportToExcel(audit, hrOverrides);
 }

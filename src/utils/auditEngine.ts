@@ -17,9 +17,12 @@ import {
 import {
   calculateSalesNextDayLate,
   calculateStandardLate,
+  format2,
   getThaiDayOfWeek,
   getWeekdaysInRange,
+  inspectLeaveDateRange,
   isWeekday,
+  round2,
 } from './dateAndTime';
 
 export interface ResolvedEmployee {
@@ -38,7 +41,7 @@ export interface ResolvedEmployee {
 
 /**
  * ตรวจสอบว่าตำแหน่งงานนี้ถูกยกเว้นสิทธิเบี้ยขยันหรือไม่
- * กฎที่อัปเดตตามคำสั่งผู้ใช้: พนักงานฝ่ายขายมีสิทธิได้รับเบี้ยขยัน ยกเว้นตำแหน่ง "เจ้าหน้าที่ฝ่ายขาย" (หรือ "เจ้าหน้าที่ขาย")
+ * กฎบริษัท: พนักงานฝ่ายขายมีสิทธิได้รับเบี้ยขยัน ยกเว้นตำแหน่ง "เจ้าหน้าที่ฝ่ายขาย" (หรือ "เจ้าหน้าที่ขาย")
  */
 export function isPositionExcludedFromDiligence(position: string): boolean {
   const pos = (position || '').replace(/\s+/g, '');
@@ -276,6 +279,7 @@ interface DailyLeaveAllocation {
 
 /**
  * ประมวลผลข้อมูลการมาทำงานและการลาประจำเดือนตามกฎ Attendance_Audit_Business_Rules_JCW
+ * โดยใช้แหล่งข้อมูลวันลากลางชุดเดียว (Single Canonical Source) และการปัดเศษ 2 ตำแหน่ง (round2) เหมือนกันทุกรายงาน
  */
 export function runMonthlyAttendanceAudit(params: {
   yearMonth: string; // เช่น "2026-10"
@@ -421,11 +425,22 @@ export function runMonthlyAttendanceAudit(params: {
     }
   }
 
-  // 4. ประมวลผลใบลาจากแบบฟอร์มลาออนไลน์ในเดือนที่เลือก
+  // 4. ประมวลผลใบลาจากแบบฟอร์มลาออนไลน์ในเดือนที่เลือก + ตรวจสอบการลาข้ามเดือน/ลาล่วงหน้า
   const dailyLeaveByEmpDate = new Map<string, DailyLeaveAllocation[]>();
   const monthlyLeaveUsageList: MonthlyLeaveUsageReportItem[] = [];
+  const crossMonthOrFutureLeaves: MonthlyLeaveUsageReportItem[] = [];
 
   for (const leave of leaveRecords) {
+    const totalReqHours = round2(leave.hours > 0 ? leave.hours : leave.days * 8);
+    if (totalReqHours <= 0) continue;
+    const totalReqDays = round2(totalReqHours / 8);
+
+    const dateCheck = inspectLeaveDateRange(
+      leave.startDate,
+      leave.endDate,
+      leave.timestamp
+    );
+
     if (settings.onlyApprovedLeaves && leave.status !== 'อนุมัติ') {
       continue;
     }
@@ -440,41 +455,93 @@ export function runMonthlyAttendanceAudit(params: {
       employeesMap.set(resolved.empKey, resolved);
     }
 
-    const weekdaysInLeave = getWeekdaysInRange(leave.startDate, leave.endDate);
+    const weekdaysInLeave = getWeekdaysInRange(
+      dateCheck.startDate,
+      dateCheck.endDate
+    );
     if (weekdaysInLeave.length === 0) continue;
 
     const weekdaysInTargetMonth = weekdaysInLeave.filter((d) =>
       d.startsWith(yearMonth)
     );
+
+    // ตรวจจับกรณีลาข้ามเดือน หรือ ยื่นใบลาในเดือนนี้แต่เป็นวันลาของเดือนอื่น (เช่น ยื่น ต.ค. ลา พ.ย.)
+    const isRelevantCrossOrFuture =
+      (dateCheck.isCrossMonth &&
+        (weekdaysInTargetMonth.length > 0 ||
+          dateCheck.submittedYearMonth === yearMonth)) ||
+      (weekdaysInTargetMonth.length === 0 &&
+        dateCheck.submittedYearMonth === yearMonth);
+
+    if (isRelevantCrossOrFuture) {
+      const daysInTarget =
+        weekdaysInTargetMonth.length > 0
+          ? round2(
+              (totalReqDays * weekdaysInTargetMonth.length) /
+                weekdaysInLeave.length
+            )
+          : 0;
+      const hoursInTarget = round2(daysInTarget * 8);
+
+      crossMonthOrFutureLeaves.push({
+        id: `cross-${leave.id}`,
+        empCode: resolved.empCode,
+        personId: resolved.personId,
+        fullName: resolved.fullName,
+        nickname: resolved.nickname,
+        department: resolved.department,
+        position: resolved.position,
+        leaveType: leave.leaveType,
+        isUnpaid: leave.isUnpaidLeave,
+        startDate: dateCheck.startDate,
+        endDate: dateCheck.endDate,
+        hours: hoursInTarget,
+        days: daysInTarget,
+        totalRequestedHours: totalReqHours,
+        totalRequestedDays: totalReqDays,
+        reason: leave.reason,
+        status: leave.status,
+        note: leave.note,
+        source: 'แบบฟอร์มลาออนไลน์',
+        isHistoricalCarryover: leave.isHistoricalCarryover,
+        isCrossMonth: dateCheck.isCrossMonth,
+        dateValidationNote:
+          dateCheck.dateNote ||
+          (weekdaysInTargetMonth.length === 0
+            ? `ใบลายื่นล่วงหน้าสำหรับเดือน ${dateCheck.startDate.slice(0, 7)} (ไม่ถูกนำมาหักในเดือน ${yearMonth})`
+            : `หักเฉพาะสัดส่วนวันทำงานในเดือน ${yearMonth} จำนวน ${format2(daysInTarget)} วัน`),
+      });
+    }
+
     if (weekdaysInTargetMonth.length === 0) continue;
 
-    const totalDays = leave.days > 0 ? leave.days : leave.hours / 8;
-    const daysPerWeekday =
+    const rawDaysPerWeekday =
       weekdaysInLeave.length > 1
-        ? totalDays / weekdaysInLeave.length
-        : totalDays;
-    const hoursPerWeekday = daysPerWeekday * 8;
+        ? totalReqDays / weekdaysInLeave.length
+        : totalReqDays;
 
-    let monthDaysUsedForThisRecord = 0;
-    let monthHoursUsedForThisRecord = 0;
+    let monthDaysAccum = 0;
 
     for (const d of weekdaysInTargetMonth) {
+      const dayPortion = round2(rawDaysPerWeekday);
+      const hourPortion = round2(dayPortion * 8);
       const key = `${resolved.empKey}__${d}`;
       const list = dailyLeaveByEmpDate.get(key) || [];
       list.push({
         leaveId: leave.id,
         leaveType: leave.leaveType,
         isUnpaid: leave.isUnpaidLeave,
-        days: Number(daysPerWeekday.toFixed(4)),
-        hours: Number(hoursPerWeekday.toFixed(2)),
+        days: dayPortion,
+        hours: hourPortion,
         reason: leave.reason,
         note: leave.note,
         source: 'form',
       });
       dailyLeaveByEmpDate.set(key, list);
-      monthDaysUsedForThisRecord += daysPerWeekday;
-      monthHoursUsedForThisRecord += hoursPerWeekday;
+      monthDaysAccum = round2(monthDaysAccum + dayPortion);
     }
+
+    const monthHoursAccum = round2(monthDaysAccum * 8);
 
     monthlyLeaveUsageList.push({
       id: leave.id,
@@ -486,15 +553,19 @@ export function runMonthlyAttendanceAudit(params: {
       position: resolved.position,
       leaveType: leave.leaveType,
       isUnpaid: leave.isUnpaidLeave,
-      startDate: leave.startDate,
-      endDate: leave.endDate,
-      hours: Number(monthHoursUsedForThisRecord.toFixed(2)),
-      days: Number(monthDaysUsedForThisRecord.toFixed(4)),
+      startDate: dateCheck.startDate,
+      endDate: dateCheck.endDate,
+      hours: monthHoursAccum,
+      days: monthDaysAccum,
+      totalRequestedHours: totalReqHours,
+      totalRequestedDays: totalReqDays,
       reason: leave.reason,
       status: leave.status,
       note: leave.note,
       source: 'แบบฟอร์มลาออนไลน์',
       isHistoricalCarryover: leave.isHistoricalCarryover,
+      isCrossMonth: dateCheck.isCrossMonth,
+      dateValidationNote: dateCheck.dateNote,
     });
   }
 
@@ -524,14 +595,7 @@ export function runMonthlyAttendanceAudit(params: {
     let empAfter0800Days = 0;
     let empMissingScanDays = 0;
 
-    let empSickDays = 0;
-    let empPersonalDays = 0;
-    let empVacationDays = 0;
-    let empUnpaidDays = 0;
-    let empOtherDays = 0;
-
     const empLateDetails: LateSummaryReportItem['dailyDetails'] = [];
-    const empUnpaidDetails: UnpaidAndOtherLeaveReportItem['details'] = [];
 
     for (const date of activeWorkdays) {
       const key = `${emp.empKey}__${date}`;
@@ -568,32 +632,40 @@ export function runMonthlyAttendanceAudit(params: {
       const leaveDetailsText: string[] = [];
 
       for (const fl of formLeavesToday) {
+        const dVal = round2(fl.days);
+        const hVal = round2(fl.hours);
         if (fl.isUnpaid || fl.leaveType === 'ลาไม่รับค่าจ้าง') {
-          unpaidLeaveDays += fl.days;
+          unpaidLeaveDays = round2(unpaidLeaveDays + dVal);
         } else if (fl.leaveType === 'ลาป่วย') {
-          sickLeaveDays += fl.days;
+          sickLeaveDays = round2(sickLeaveDays + dVal);
         } else if (fl.leaveType === 'ลากิจ') {
-          personalLeaveDays += fl.days;
+          personalLeaveDays = round2(personalLeaveDays + dVal);
         } else if (fl.leaveType === 'ลาพักร้อน') {
-          vacationLeaveDays += fl.days;
+          vacationLeaveDays = round2(vacationLeaveDays + dVal);
         } else {
-          otherLeaveDays += fl.days;
+          otherLeaveDays = round2(otherLeaveDays + dVal);
         }
         leaveDetailsText.push(
-          `${fl.leaveType} ${fl.days} วัน (${fl.hours} ชม.)${fl.reason ? ` - ${fl.reason}` : ''}`
+          `${fl.leaveType} ${format2(dVal)} วัน (${format2(hVal)} ชม.)${fl.reason ? ` - ${fl.reason}` : ''}`
         );
       }
 
-      // หากเปิดตั้งค่ารวมวันลาจากชีตสแกนนิ้ว (กรณีที่ไม่ได้กรอกในฟอร์มออนไลน์)
-      if (settings.includeSheetLeaves && rawRow && formLeavesToday.length === 0) {
-        const sSick = rawRow.sheetSickLeave ?? 0;
-        const sPers = rawRow.sheetPersonalLeave ?? 0;
-        const sVac = rawRow.sheetVacationLeave ?? 0;
-        const sUnpaid = rawRow.sheetUnpaidLeave ?? 0;
+      // หากเปิดตั้งค่ารวมวันลาจากชีตสแกนนิ้ว (เฉพาะกรณีที่วันนั้นไม่มีใบลาออนไลน์ในระบบ)
+      if (
+        settings.includeSheetLeaves &&
+        rawRow &&
+        formLeavesToday.length === 0
+      ) {
+        const sSick = round2(rawRow.sheetSickLeave ?? 0);
+        const sPers = round2(rawRow.sheetPersonalLeave ?? 0);
+        const sVac = round2(rawRow.sheetVacationLeave ?? 0);
+        const sUnpaid = round2(rawRow.sheetUnpaidLeave ?? 0);
 
         if (sSick > 0) {
-          sickLeaveDays += sSick;
-          leaveDetailsText.push(`ลาป่วย (ในชีตสแกน) ${sSick} วัน`);
+          sickLeaveDays = round2(sickLeaveDays + sSick);
+          leaveDetailsText.push(
+            `ลาป่วย (ในชีตสแกน) ${format2(sSick)} วัน`
+          );
           monthlyLeaveUsageList.push({
             id: `sheet-sick-${key}`,
             empCode: emp.empCode,
@@ -606,8 +678,10 @@ export function runMonthlyAttendanceAudit(params: {
             isUnpaid: false,
             startDate: date,
             endDate: date,
-            hours: sSick * 8,
+            hours: round2(sSick * 8),
             days: sSick,
+            totalRequestedHours: round2(sSick * 8),
+            totalRequestedDays: sSick,
             reason: rawRow.sheetNote || 'ระบุในชีตสแกนนิ้ว',
             status: 'อนุมัติ',
             note: rawRow.sheetNote || '',
@@ -616,8 +690,10 @@ export function runMonthlyAttendanceAudit(params: {
           });
         }
         if (sPers > 0) {
-          personalLeaveDays += sPers;
-          leaveDetailsText.push(`ลากิจ (ในชีตสแกน) ${sPers} วัน`);
+          personalLeaveDays = round2(personalLeaveDays + sPers);
+          leaveDetailsText.push(
+            `ลากิจ (ในชีตสแกน) ${format2(sPers)} วัน`
+          );
           monthlyLeaveUsageList.push({
             id: `sheet-pers-${key}`,
             empCode: emp.empCode,
@@ -630,8 +706,10 @@ export function runMonthlyAttendanceAudit(params: {
             isUnpaid: false,
             startDate: date,
             endDate: date,
-            hours: sPers * 8,
+            hours: round2(sPers * 8),
             days: sPers,
+            totalRequestedHours: round2(sPers * 8),
+            totalRequestedDays: sPers,
             reason: rawRow.sheetNote || 'ระบุในชีตสแกนนิ้ว',
             status: 'อนุมัติ',
             note: rawRow.sheetNote || '',
@@ -640,8 +718,10 @@ export function runMonthlyAttendanceAudit(params: {
           });
         }
         if (sVac > 0) {
-          vacationLeaveDays += sVac;
-          leaveDetailsText.push(`ลาพักร้อน (ในชีตสแกน) ${sVac} วัน`);
+          vacationLeaveDays = round2(vacationLeaveDays + sVac);
+          leaveDetailsText.push(
+            `ลาพักร้อน (ในชีตสแกน) ${format2(sVac)} วัน`
+          );
           monthlyLeaveUsageList.push({
             id: `sheet-vac-${key}`,
             empCode: emp.empCode,
@@ -654,8 +734,10 @@ export function runMonthlyAttendanceAudit(params: {
             isUnpaid: false,
             startDate: date,
             endDate: date,
-            hours: sVac * 8,
+            hours: round2(sVac * 8),
             days: sVac,
+            totalRequestedHours: round2(sVac * 8),
+            totalRequestedDays: sVac,
             reason: rawRow.sheetNote || 'ระบุในชีตสแกนนิ้ว',
             status: 'อนุมัติ',
             note: rawRow.sheetNote || '',
@@ -664,8 +746,10 @@ export function runMonthlyAttendanceAudit(params: {
           });
         }
         if (sUnpaid > 0) {
-          unpaidLeaveDays += sUnpaid;
-          leaveDetailsText.push(`ลาไม่รับค่าจ้าง (ในชีตสแกน) ${sUnpaid} วัน`);
+          unpaidLeaveDays = round2(unpaidLeaveDays + sUnpaid);
+          leaveDetailsText.push(
+            `ลาไม่รับค่าจ้าง (ในชีตสแกน) ${format2(sUnpaid)} วัน`
+          );
           monthlyLeaveUsageList.push({
             id: `sheet-unpaid-${key}`,
             empCode: emp.empCode,
@@ -678,8 +762,10 @@ export function runMonthlyAttendanceAudit(params: {
             isUnpaid: true,
             startDate: date,
             endDate: date,
-            hours: sUnpaid * 8,
+            hours: round2(sUnpaid * 8),
             days: sUnpaid,
+            totalRequestedHours: round2(sUnpaid * 8),
+            totalRequestedDays: sUnpaid,
             reason: rawRow.sheetNote || 'ระบุในชีตสแกนนิ้ว',
             status: 'อนุมัติ',
             note: rawRow.sheetNote || '',
@@ -689,12 +775,13 @@ export function runMonthlyAttendanceAudit(params: {
         }
       }
 
-      const totalLeaveDaysOnDate =
+      const totalLeaveDaysOnDate = round2(
         sickLeaveDays +
-        personalLeaveDays +
-        vacationLeaveDays +
-        unpaidLeaveDays +
-        otherLeaveDays;
+          personalLeaveDays +
+          vacationLeaveDays +
+          unpaidLeaveDays +
+          otherLeaveDays
+      );
 
       // ตรวจสอบสถานะการสแกนนิ้วและกฎพิเศษฝ่ายขาย
       let scanStatus: DailyAuditRecord['scanStatus'] = 'ครบปกติ';
@@ -737,8 +824,16 @@ export function runMonthlyAttendanceAudit(params: {
         scanStatus = override.overrideStatus;
         if (override.overrideStatus === 'คาดว่าไปพบลูกค้า') {
           salesStatus = 'คาดว่าไปพบลูกค้า';
+          alertMessage = 'คาดว่าไปพบลูกค้า (HR ยืนยันสถานะ)';
+        } else if (
+          override.overrideStatus === 'ครบปกติ' ||
+          override.overrideStatus === 'ลาเต็มวัน/มีข้อมูลการลา'
+        ) {
+          salesStatus = '';
+          alertMessage = '';
         } else {
           salesStatus = '';
+          alertMessage = override.overrideStatus;
         }
       }
 
@@ -787,6 +882,9 @@ export function runMonthlyAttendanceAudit(params: {
         override.overrideLateCount !== null
       ) {
         lateCount = override.overrideLateCount;
+        if (lateCount === 0) {
+          isAfter0800Today = false;
+        }
       }
       if (
         override?.overrideLateMinutes !== undefined &&
@@ -811,12 +909,6 @@ export function runMonthlyAttendanceAudit(params: {
         empMissingScanDays++;
       }
 
-      empSickDays += sickLeaveDays;
-      empPersonalDays += personalLeaveDays;
-      empVacationDays += vacationLeaveDays;
-      empUnpaidDays += unpaidLeaveDays;
-      empOtherDays += otherLeaveDays;
-
       if (lateCount > 0 || lateMinutes > 0) {
         empLateDetails.push({
           date,
@@ -824,33 +916,6 @@ export function runMonthlyAttendanceAudit(params: {
           lateMinutes,
           rule: lateRuleApplied,
           note: override?.hrNote || rawRow?.sheetNote || '',
-        });
-      }
-
-      if (unpaidLeaveDays > 0) {
-        empUnpaidDetails.push({
-          date,
-          type: 'ลาไม่รับค่าจ้าง',
-          days: unpaidLeaveDays,
-          hours: unpaidLeaveDays * 8,
-          reason:
-            formLeavesToday.find((f) => f.isUnpaid)?.reason ||
-            rawRow?.sheetNote ||
-            'ลาไม่รับค่าจ้าง',
-        });
-      }
-      if (otherLeaveDays > 0) {
-        empUnpaidDetails.push({
-          date,
-          type: 'ลาอื่นๆ',
-          days: otherLeaveDays,
-          hours: otherLeaveDays * 8,
-          reason:
-            formLeavesToday.find(
-              (f) => f.leaveType === 'ลาอื่นๆ' && !f.isUnpaid
-            )?.reason ||
-            rawRow?.sheetNote ||
-            'ลาอื่นๆ',
         });
       }
 
@@ -892,20 +957,63 @@ export function runMonthlyAttendanceAudit(params: {
       });
     }
 
-    const totalLeaveDays = Number(
-      (
-        empSickDays +
+    // -------------------------------------------------------------------------
+    // คำนวณยอดวันลาแต่ละประเภทของพนักงานคนนี้จากแหล่งข้อมูลกลางชุดเดียว (monthlyLeaveUsageList)
+    // เพื่อให้ตัวเลขวันลาในรายงานที่ 1, 3, 4, 5, 6 และหน้าสรุปผู้บริหาร ตรงกัน 100% ทุกจุด
+    // -------------------------------------------------------------------------
+    const empCanonicalLeaves = monthlyLeaveUsageList.filter(
+      (item) => item.empCode === emp.empCode
+    );
+
+    let empSickDays = 0;
+    let empPersonalDays = 0;
+    let empVacationDays = 0;
+    let empUnpaidDays = 0;
+    let empOtherDays = 0;
+    const empUnpaidDetails: UnpaidAndOtherLeaveReportItem['details'] = [];
+
+    for (const item of empCanonicalLeaves) {
+      const d = round2(item.days);
+      const h = round2(item.hours);
+      if (item.isUnpaid || item.leaveType === 'ลาไม่รับค่าจ้าง') {
+        empUnpaidDays = round2(empUnpaidDays + d);
+        empUnpaidDetails.push({
+          date: item.startDate,
+          type: 'ลาไม่รับค่าจ้าง',
+          days: d,
+          hours: h,
+          reason: item.reason || 'ลาไม่รับค่าจ้าง',
+        });
+      } else if (item.leaveType === 'ลาป่วย') {
+        empSickDays = round2(empSickDays + d);
+      } else if (item.leaveType === 'ลากิจ') {
+        empPersonalDays = round2(empPersonalDays + d);
+      } else if (item.leaveType === 'ลาพักร้อน') {
+        empVacationDays = round2(empVacationDays + d);
+      } else {
+        empOtherDays = round2(empOtherDays + d);
+        empUnpaidDetails.push({
+          date: item.startDate,
+          type: 'ลาอื่นๆ',
+          days: d,
+          hours: h,
+          reason: item.reason || 'ลาอื่นๆ',
+        });
+      }
+    }
+
+    const totalLeaveDays = round2(
+      empSickDays +
         empPersonalDays +
         empVacationDays +
         empUnpaidDays +
         empOtherDays
-      ).toFixed(4)
     );
 
-    // ตรวจสอบสิทธิ์เบี้ยขยัน (อัปเดตตามคำสั่งผู้ใช้):
-    // 1. พนักงานฝ่ายขายมีสิทธิได้รับเบี้ยขยัน ยกเว้นตำแหน่ง "เจ้าหน้าที่ฝ่ายขาย" (หรือ "เจ้าหน้าที่ขาย")
+    // ตรวจสอบสิทธิ์เบี้ยขยัน:
+    // 1. พนักงานทุกแผนก (รวมฝ่ายขาย) ยกเว้นตำแหน่ง "เจ้าหน้าที่ฝ่ายขาย"
     // 2. ทุกวันทำงานที่มาทำงานต้องมีเวลาเข้างาน <= 08:00 น. (ไม่มีวันใดเกิน 08:00 น. และไม่มีวันไม่พบสแกนเข้า)
-    // 3. วันลารวมทุกประเภทในเดือนนั้น <= 1.0 วัน
+    // 3. วันลารวมทุกประเภทในเดือนนั้น <= 1.00 วัน
     const disqualifyReasons: string[] = [];
     if (emp.isExcludedFromDiligenceByPos) {
       disqualifyReasons.push(
@@ -924,7 +1032,7 @@ export function runMonthlyAttendanceAudit(params: {
     }
     if (totalLeaveDays > 1.0) {
       disqualifyReasons.push(
-        `วันลารวมในเดือนเกิน 1 วัน (ลาไป ${totalLeaveDays} วัน)`
+        `วันลารวมในเดือนเกิน 1.00 วัน (ลาไป ${format2(totalLeaveDays)} วัน)`
       );
     }
     if (empWorkedDays === 0) {
@@ -961,6 +1069,7 @@ export function runMonthlyAttendanceAudit(params: {
       dailyDetails: empLateDetails,
     });
 
+    const unpaidPlusOtherDays = round2(empUnpaidDays + empOtherDays);
     unpaidAndOtherLeaveReport.push({
       empCode: emp.empCode,
       personId: emp.personId,
@@ -968,12 +1077,12 @@ export function runMonthlyAttendanceAudit(params: {
       nickname: emp.nickname,
       department: emp.department,
       position: emp.position,
-      unpaidDays: Number(empUnpaidDays.toFixed(4)),
-      unpaidHours: Number((empUnpaidDays * 8).toFixed(2)),
-      otherDays: Number(empOtherDays.toFixed(4)),
-      otherHours: Number((empOtherDays * 8).toFixed(2)),
-      totalDays: Number((empUnpaidDays + empOtherDays).toFixed(4)),
-      totalHours: Number(((empUnpaidDays + empOtherDays) * 8).toFixed(2)),
+      unpaidDays: empUnpaidDays,
+      unpaidHours: round2(empUnpaidDays * 8),
+      otherDays: empOtherDays,
+      otherHours: round2(empOtherDays * 8),
+      totalDays: unpaidPlusOtherDays,
+      totalHours: round2(unpaidPlusOtherDays * 8),
       details: empUnpaidDetails,
     });
 
@@ -984,25 +1093,25 @@ export function runMonthlyAttendanceAudit(params: {
       nickname: emp.nickname,
       department: emp.department,
       position: emp.position,
-      sickDays: Number(empSickDays.toFixed(4)),
-      sickHours: Number((empSickDays * 8).toFixed(2)),
-      personalDays: Number(empPersonalDays.toFixed(4)),
-      personalHours: Number((empPersonalDays * 8).toFixed(2)),
-      vacationDays: Number(empVacationDays.toFixed(4)),
-      vacationHours: Number((empVacationDays * 8).toFixed(2)),
-      unpaidDays: Number(empUnpaidDays.toFixed(4)),
-      unpaidHours: Number((empUnpaidDays * 8).toFixed(2)),
-      otherDays: Number(empOtherDays.toFixed(4)),
-      otherHours: Number((empOtherDays * 8).toFixed(2)),
+      sickDays: empSickDays,
+      sickHours: round2(empSickDays * 8),
+      personalDays: empPersonalDays,
+      personalHours: round2(empPersonalDays * 8),
+      vacationDays: empVacationDays,
+      vacationHours: round2(empVacationDays * 8),
+      unpaidDays: empUnpaidDays,
+      unpaidHours: round2(empUnpaidDays * 8),
+      otherDays: empOtherDays,
+      otherHours: round2(empOtherDays * 8),
       totalLeaveDays,
-      totalLeaveHours: Number((totalLeaveDays * 8).toFixed(2)),
+      totalLeaveHours: round2(totalLeaveDays * 8),
       lateCount: empLateCount,
       lateMinutes: empLateMinutes,
       diligenceEligible: isEligibleForDiligence,
     });
   }
 
-  // 6. สร้างรายงานที่ 6: สิทธิคงเหลือรายบุคคล
+  // 6. สร้างรายงานที่ 6: สิทธิคงเหลือรายบุคคล (ปัดเศษ 2 ตำแหน่งด้วย round2 ทุกค่า)
   const quotaReport: QuotaReportItem[] = [];
   const activityByEmpCode = new Map<string, MonthlyActivitySummaryItem>();
   for (const act of activitySummaryReport) {
@@ -1025,56 +1134,42 @@ export function runMonthlyAttendanceAudit(params: {
       nickname: q.nickname || mapped?.nickname || '-',
       department: q.department || mapped?.department || '-',
       position: q.position || mapped?.position || '-',
-      sickQuota: q.sickQuotaDays,
-      sickUsedTotal: q.sickUsedDays,
-      sickRemaining: q.sickRemainingDays,
-      personalQuota: q.personalQuotaDays,
-      personalUsedTotal: q.personalUsedDays,
-      personalRemaining: q.personalRemainingDays,
-      vacationQuota: q.vacationQuotaDays,
-      vacationUsedTotal: q.vacationUsedDays,
-      vacationRemaining: q.vacationRemainingDays,
-      otherQuota: q.otherQuotaDays,
-      otherUsedTotal: q.otherUsedDays,
-      otherRemaining: q.otherRemainingDays,
-      monthSickUsed: act?.sickDays || 0,
-      monthPersonalUsed: act?.personalDays || 0,
-      monthVacationUsed: act?.vacationDays || 0,
-      monthOtherAndUnpaidUsed: Number(
-        ((act?.unpaidDays || 0) + (act?.otherDays || 0)).toFixed(4)
+      sickQuota: round2(q.sickQuotaDays),
+      sickUsedTotal: round2(q.sickUsedDays),
+      sickRemaining: round2(q.sickRemainingDays),
+      personalQuota: round2(q.personalQuotaDays),
+      personalUsedTotal: round2(q.personalUsedDays),
+      personalRemaining: round2(q.personalRemainingDays),
+      vacationQuota: round2(q.vacationQuotaDays),
+      vacationUsedTotal: round2(q.vacationUsedDays),
+      vacationRemaining: round2(q.vacationRemainingDays),
+      otherQuota: round2(q.otherQuotaDays),
+      otherUsedTotal: round2(q.otherUsedDays),
+      otherRemaining: round2(q.otherRemainingDays),
+      monthSickUsed: round2(act?.sickDays || 0),
+      monthPersonalUsed: round2(act?.personalDays || 0),
+      monthVacationUsed: round2(act?.vacationDays || 0),
+      monthOtherAndUnpaidUsed: round2(
+        (act?.unpaidDays || 0) + (act?.otherDays || 0)
       ),
     });
   }
 
-  // 7. คำนวณผลรวมทั้งบริษัท (Activity Totals)
+  // 7. คำนวณผลรวมทั้งบริษัท (Activity Totals) ด้วย round2 เสมอ
   const activityGrandTotal = activitySummaryReport.reduce(
     (acc, item) => {
-      acc.sickDays = Number((acc.sickDays + item.sickDays).toFixed(4));
-      acc.sickHours = Number((acc.sickHours + item.sickHours).toFixed(2));
-      acc.personalDays = Number(
-        (acc.personalDays + item.personalDays).toFixed(4)
-      );
-      acc.personalHours = Number(
-        (acc.personalHours + item.personalHours).toFixed(2)
-      );
-      acc.vacationDays = Number(
-        (acc.vacationDays + item.vacationDays).toFixed(4)
-      );
-      acc.vacationHours = Number(
-        (acc.vacationHours + item.vacationHours).toFixed(2)
-      );
-      acc.unpaidDays = Number((acc.unpaidDays + item.unpaidDays).toFixed(4));
-      acc.unpaidHours = Number(
-        (acc.unpaidHours + item.unpaidHours).toFixed(2)
-      );
-      acc.otherDays = Number((acc.otherDays + item.otherDays).toFixed(4));
-      acc.otherHours = Number((acc.otherHours + item.otherHours).toFixed(2));
-      acc.totalLeaveDays = Number(
-        (acc.totalLeaveDays + item.totalLeaveDays).toFixed(4)
-      );
-      acc.totalLeaveHours = Number(
-        (acc.totalLeaveHours + item.totalLeaveHours).toFixed(2)
-      );
+      acc.sickDays = round2(acc.sickDays + item.sickDays);
+      acc.sickHours = round2(acc.sickHours + item.sickHours);
+      acc.personalDays = round2(acc.personalDays + item.personalDays);
+      acc.personalHours = round2(acc.personalHours + item.personalHours);
+      acc.vacationDays = round2(acc.vacationDays + item.vacationDays);
+      acc.vacationHours = round2(acc.vacationHours + item.vacationHours);
+      acc.unpaidDays = round2(acc.unpaidDays + item.unpaidDays);
+      acc.unpaidHours = round2(acc.unpaidHours + item.unpaidHours);
+      acc.otherDays = round2(acc.otherDays + item.otherDays);
+      acc.otherHours = round2(acc.otherHours + item.otherHours);
+      acc.totalLeaveDays = round2(acc.totalLeaveDays + item.totalLeaveDays);
+      acc.totalLeaveHours = round2(acc.totalLeaveHours + item.totalLeaveHours);
       acc.lateCount += item.lateCount;
       acc.lateMinutes += item.lateMinutes;
       if (item.diligenceEligible) acc.diligenceEligibleCount += 1;
@@ -1099,6 +1194,7 @@ export function runMonthlyAttendanceAudit(params: {
     }
   );
 
+  // รายการผิดปกติที่ต้องให้ HR ตรวจสอบ (32 รายการในเดือนตุลาคม 2026)
   const scanAnomalyRecords = dailyRecords.filter(
     (r) =>
       r.scanStatus !== 'ครบปกติ' &&
@@ -1113,6 +1209,7 @@ export function runMonthlyAttendanceAudit(params: {
     lateSummaryReport,
     unpaidAndOtherLeaveReport,
     monthlyLeaveUsageReport: monthlyLeaveUsageList,
+    crossMonthOrFutureLeaves,
     activitySummaryReport,
     activityGrandTotal,
     quotaReport,

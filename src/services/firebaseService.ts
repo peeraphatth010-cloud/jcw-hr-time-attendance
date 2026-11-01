@@ -32,8 +32,9 @@ export interface PersistedHRState {
   updatedAt: string;
 }
 
-const LOCAL_STORAGE_STATE_KEY = 'jcw_hr_attendance_state_v3';
-const LOCAL_STORAGE_FIREBASE_CONFIG_KEY = 'jcw_hr_firebase_config_v3';
+const LOCAL_STORAGE_STATE_KEY = 'jcw_hr_attendance_state_v4';
+const LOCAL_STORAGE_FIREBASE_CONFIG_KEY = 'jcw_hr_firebase_config_v4';
+const FIRESTORE_WORKSPACE_DOC_ID = 'workspace_main';
 
 let firestoreDb: Firestore | null = null;
 let currentApp: FirebaseApp | null = null;
@@ -116,7 +117,7 @@ export function isFirebaseConnected(): boolean {
 }
 
 /**
- * บันทึกข้อมูล HR Overrides, ใบลา, สิทธิคงเหลือ และตารางผูก ID ลง LocalStorage และซิงก์ขึ้น Firebase Firestore (หากเชื่อมต่อแล้ว)
+ * บันทึกข้อมูล HR Overrides, ใบลา, สิทธิคงเหลือ และตารางผูก ID ลง LocalStorage และซิงก์ขึ้น Firebase Firestore
  */
 export async function saveHRState(state: PersistedHRState): Promise<{
   savedLocal: boolean;
@@ -126,8 +127,10 @@ export async function saveHRState(state: PersistedHRState): Promise<{
   let savedLocal = false;
   let savedFirebase = false;
 
+  const cleanState = JSON.parse(JSON.stringify(state)) as PersistedHRState;
+
   try {
-    localStorage.setItem(LOCAL_STORAGE_STATE_KEY, JSON.stringify(state));
+    localStorage.setItem(LOCAL_STORAGE_STATE_KEY, JSON.stringify(cleanState));
     savedLocal = true;
   } catch (e) {
     console.warn('LocalStorage save warning:', e);
@@ -139,8 +142,8 @@ export async function saveHRState(state: PersistedHRState): Promise<{
   }
 
   try {
-    const docRef = doc(db, 'jcw_hr_attendance', 'workspace_main');
-    await setDoc(docRef, state, { merge: true });
+    const docRef = doc(db, 'jcw_hr_attendance', FIRESTORE_WORKSPACE_DOC_ID);
+    await setDoc(docRef, cleanState, { merge: true });
     savedFirebase = true;
     return { savedLocal, savedFirebase };
   } catch (err) {
@@ -159,7 +162,7 @@ export async function loadHRState(): Promise<{
   const db = firestoreDb || initFirebaseConnection();
   if (db) {
     try {
-      const docRef = doc(db, 'jcw_hr_attendance', 'workspace_main');
+      const docRef = doc(db, 'jcw_hr_attendance', FIRESTORE_WORKSPACE_DOC_ID);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const data = snap.data() as Partial<PersistedHRState>;

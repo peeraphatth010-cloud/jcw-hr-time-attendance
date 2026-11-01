@@ -2,19 +2,25 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Award,
+  Briefcase,
   Calendar,
   CheckCircle2,
+  CheckSquare,
   Clock,
-  Cloud,
   Database,
   Download,
   Edit3,
+  Eye,
   FileSpreadsheet,
   FileText,
+  History,
   Layers,
+  LayoutDashboard,
   Plus,
   Printer,
+  RotateCcw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Upload,
   UserCheck,
@@ -47,10 +53,16 @@ import {
 } from './utils/csvExcelParser';
 import { runMonthlyAttendanceAudit } from './utils/auditEngine';
 import {
+  format2,
   formatDateDisplay,
   formatYearMonthThai,
+  inspectLeaveDateRange,
+  round2,
 } from './utils/dateAndTime';
-import { exportMonthlyAuditToExcel } from './utils/excelExporter';
+import {
+  exportHRPayrollReportToExcel,
+  exportManagerReportToExcel,
+} from './utils/excelExporter';
 import {
   FirebaseConfigData,
   getSavedFirebaseConfig,
@@ -61,6 +73,8 @@ import {
 } from './services/firebaseService';
 
 type ActiveTab =
+  | 'executive_1page'
+  | 'hr_exceptions'
   | 'overview'
   | 'report1_diligence'
   | 'report2_late'
@@ -70,6 +84,8 @@ type ActiveTab =
   | 'report6_quota'
   | 'daily_audit'
   | 'company_rules';
+
+type ReportAudienceMode = 'manager' | 'hr_payroll';
 
 const DEFAULT_SETTINGS: AuditSettings = {
   onlyApprovedLeaves: true,
@@ -117,14 +133,28 @@ export default function App() {
 
   // เดือนที่เลือก (ค่าเริ่มต้น: 2026-10 เดือนตุลาคม ชีต 10 ล่าสุด)
   const [selectedYearMonth, setSelectedYearMonth] = useState<string>('2026-10');
-  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('executive_1page');
+  const [reportMode, setReportMode] =
+    useState<ReportAudienceMode>('hr_payroll');
 
-  // ตัวกรองตารางตรวจสอบสแกนนิ้วรายวัน
+  // ตัวกรองตารางตรวจสอบสแกนนิ้วรายวัน และหน้า HR Exception
   const [dailyFilterEmp, setDailyFilterEmp] = useState<string>('ALL');
   const [dailyFilterStatus, setDailyFilterStatus] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [exceptionSubFilter, setExceptionSubFilter] = useState<
+    'ALL' | 'MISSING_OUT' | 'MISSING_IN' | 'CLIENT_VISIT'
+  >('ALL');
 
-  // Modal สำหรับแก้ไข/ใส่หมายเหตุรายวัน (HR Override)
+  // ระบบแก้ไขแบบกลุ่ม (Bulk Edit) + แสดงผลกระทบก่อนบันทึก (Impact Preview)
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [bulkStatusInput, setBulkStatusInput] = useState<string>('ครบปกติ');
+  const [bulkScanInInput, setBulkScanInInput] = useState<string>('');
+  const [bulkScanOutInput, setBulkScanOutInput] = useState<string>('');
+  const [bulkWaiveLate, setBulkWaiveLate] = useState<boolean>(false);
+  const [bulkNoteInput, setBulkNoteInput] = useState<string>('');
+  const [isBulkPreviewOpen, setIsBulkPreviewOpen] = useState<boolean>(false);
+
+  // Modal สำหรับแก้ไข/ใส่หมายเหตุรายวันเดี่ยว (HR Override)
   const [editingDailyRecord, setEditingDailyRecord] =
     useState<DailyAuditRecord | null>(null);
   const [overrideScanInInput, setOverrideScanInInput] = useState<string>('');
@@ -174,7 +204,7 @@ export default function App() {
   const [newLeaveReason, setNewLeaveReason] = useState<string>('');
   const [newLeaveIsUnpaid, setNewLeaveIsUnpaid] = useState<boolean>(false);
 
-  // โหลดข้อมูลจาก Firebase / LocalStorage ตอนเปิดแอป และซิงก์ข้อมูลเริ่มต้นขึ้น Firebase อัตโนมัติ
+  // โหลดข้อมูลจาก Firebase / LocalStorage ตอนเปิดแอป
   useEffect(() => {
     let mounted = true;
     loadHRState().then(async ({ state, source }) => {
@@ -183,12 +213,24 @@ export default function App() {
         state?.employeeMappings &&
         state.employeeMappings.length > 0 &&
         state.employeeMappings.every(
-          (m) => Boolean(m.empCode) && Boolean(m.scannerName) && Boolean(m.position)
+          (m) =>
+            Boolean(m.empCode) && Boolean(m.scannerName) && Boolean(m.position)
         );
       const hasValidQuotas =
         state?.quotaRecords &&
         state.quotaRecords.length > 0 &&
-        state.quotaRecords.every((q) => q.sickQuotaDays > 0 && Boolean(q.position));
+        state.quotaRecords.every(
+          (q) => q.sickQuotaDays > 0 && Boolean(q.position)
+        );
+      const hasValidLeaves =
+        state?.leaveRecords &&
+        state.leaveRecords.length > 0 &&
+        state.leaveRecords.every(
+          (l) =>
+            Boolean(l.startDate) &&
+            /^\d{4}-\d{2}-\d{2}$/.test(l.startDate) &&
+            l.hours > 0
+        );
 
       const nextMappings = hasValidMappings
         ? state!.employeeMappings!
@@ -196,10 +238,9 @@ export default function App() {
       const nextQuotas = hasValidQuotas
         ? state!.quotaRecords!
         : initialQuotaRecords;
-      const nextLeaves =
-        state?.leaveRecords && state.leaveRecords.length > 0
-          ? state.leaveRecords
-          : initialLeaveRecords;
+      const nextLeaves = hasValidLeaves
+        ? state!.leaveRecords!
+        : initialLeaveRecords;
       const nextOverrides = state?.hrOverrides || {};
       const nextSettings = state?.settings || DEFAULT_SETTINGS;
 
@@ -209,7 +250,12 @@ export default function App() {
       setHrOverrides(nextOverrides);
       setSettings(nextSettings);
 
-      if (source === 'firebase' && hasValidMappings && hasValidQuotas) {
+      if (
+        source === 'firebase' &&
+        hasValidMappings &&
+        hasValidQuotas &&
+        hasValidLeaves
+      ) {
         setSyncStatus(
           'เชื่อมต่อและซิงก์ข้อมูลกับ Firebase (timeattendenceJCW) สำเร็จ'
         );
@@ -270,7 +316,7 @@ export default function App() {
     return arr;
   }, [attendanceRows]);
 
-  // ประมวลผลรายงานทั้ง 6 ข้อ + ตารางตรวจสอบสแกนนิ้วด้วย Audit Engine
+  // ประมวลผลรายงานทั้งหมดด้วย Audit Engine
   const auditResult = useMemo(() => {
     return runMonthlyAttendanceAudit({
       yearMonth: selectedYearMonth,
@@ -297,7 +343,148 @@ export default function App() {
     autoSkipEmptyDays,
   ]);
 
-  // กรองรายการตรวจสอบสแกนนิ้วรายวัน
+  // สร้าง Map ของ dailyRecords ตาม key เพื่อใช้ใน Bulk Edit
+  const dailyRecordByKey = useMemo(() => {
+    const map = new Map<string, DailyAuditRecord>();
+    for (const r of auditResult.dailyRecords) {
+      map.set(r.key, r);
+    }
+    return map;
+  }, [auditResult.dailyRecords]);
+
+  // สร้างชุด Overrides จำลองสำหรับการแก้ไขแบบกลุ่ม (Bulk Edit Preview)
+  const simulatedBulkOverrides = useMemo(() => {
+    if (!isBulkPreviewOpen || selectedKeys.length === 0) return hrOverrides;
+    const next = { ...hrOverrides };
+    const nowStr = new Date().toLocaleString('th-TH');
+
+    for (const key of selectedKeys) {
+      const rec = dailyRecordByKey.get(key);
+      if (!rec) continue;
+      const existing = next[key];
+      next[key] = {
+        key,
+        empKey: rec.empCode,
+        employeeName: `${rec.fullName} (${rec.nickname})`,
+        date: rec.date,
+        previousSummary: `เข้า ${rec.originalScanIn} - ออก ${rec.originalScanOut} (${rec.scanStatus}${rec.lateMinutes > 0 ? `, สาย ${rec.lateMinutes} นาที` : ''})`,
+        overrideScanIn:
+          bulkScanInInput.trim() !== ''
+            ? bulkScanInInput.trim()
+            : existing?.overrideScanIn,
+        overrideScanOut:
+          bulkScanOutInput.trim() !== ''
+            ? bulkScanOutInput.trim()
+            : existing?.overrideScanOut,
+        overrideStatus:
+          bulkStatusInput !== ''
+            ? (bulkStatusInput as DailyAuditRecord['scanStatus'])
+            : existing?.overrideStatus,
+        overrideLateCount: bulkWaiveLate
+          ? 0
+          : existing?.overrideLateCount ?? null,
+        overrideLateMinutes: bulkWaiveLate
+          ? 0
+          : existing?.overrideLateMinutes ?? null,
+        hrNote:
+          bulkNoteInput.trim() !== ''
+            ? bulkNoteInput.trim()
+            : existing?.hrNote || 'HR ตรวจสอบและปรับปรุงแบบกลุ่ม',
+        updatedAt: nowStr,
+      };
+    }
+    return next;
+  }, [
+    isBulkPreviewOpen,
+    selectedKeys,
+    hrOverrides,
+    dailyRecordByKey,
+    bulkScanInInput,
+    bulkScanOutInput,
+    bulkStatusInput,
+    bulkWaiveLate,
+    bulkNoteInput,
+  ]);
+
+  // ประมวลผลผลลัพธ์จำลอง (After Bulk Edit) เพื่อแสดงผลกระทบก่อนบันทึกจริง
+  const previewAuditResult = useMemo(() => {
+    if (!isBulkPreviewOpen || selectedKeys.length === 0) return auditResult;
+    return runMonthlyAttendanceAudit({
+      yearMonth: selectedYearMonth,
+      attendanceRows,
+      leaveRecords,
+      quotaRecords,
+      employeeMappings,
+      hrOverrides: simulatedBulkOverrides,
+      settings: {
+        ...settings,
+        onlyMappedEmployees,
+        autoSkipCompanyWideEmptyDays: autoSkipEmptyDays,
+      },
+    });
+  }, [
+    isBulkPreviewOpen,
+    selectedKeys.length,
+    auditResult,
+    selectedYearMonth,
+    attendanceRows,
+    leaveRecords,
+    quotaRecords,
+    employeeMappings,
+    simulatedBulkOverrides,
+    settings,
+    onlyMappedEmployees,
+    autoSkipEmptyDays,
+  ]);
+
+  // กรองรายการในหน้า HR Exception (เฉพาะรายการผิดปกติ 32 รายการ)
+  const filteredExceptionRecords = useMemo(() => {
+    return auditResult.scanAnomalyRecords.filter((r) => {
+      if (
+        exceptionSubFilter === 'MISSING_OUT' &&
+        r.scanStatus !== 'พบสแกนเข้า แต่ไม่พบสแกนออก'
+      ) {
+        return false;
+      }
+      if (
+        exceptionSubFilter === 'MISSING_IN' &&
+        r.scanStatus !== 'ไม่พบสแกนเข้า แต่พบสแกนออก'
+      ) {
+        return false;
+      }
+      if (
+        exceptionSubFilter === 'CLIENT_VISIT' &&
+        r.scanStatus !== 'คาดว่าไปพบลูกค้า' &&
+        r.scanStatus !== 'ไม่พบสแกนเข้า-ออกและไม่มีใบลา'
+      ) {
+        return false;
+      }
+      if (dailyFilterEmp !== 'ALL' && r.empCode !== dailyFilterEmp) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const match =
+          r.fullName.toLowerCase().includes(q) ||
+          r.nickname.toLowerCase().includes(q) ||
+          r.position.toLowerCase().includes(q) ||
+          r.department.toLowerCase().includes(q) ||
+          r.date.includes(q) ||
+          r.alertMessage.toLowerCase().includes(q) ||
+          r.sheetNote.toLowerCase().includes(q) ||
+          r.hrNote.toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [
+    auditResult.scanAnomalyRecords,
+    exceptionSubFilter,
+    dailyFilterEmp,
+    searchQuery,
+  ]);
+
+  // กรองรายการตรวจสอบสแกนนิ้วรายวันทั้งหมด
   const filteredDailyRecords = useMemo(() => {
     return auditResult.dailyRecords.filter((r) => {
       if (dailyFilterEmp !== 'ALL' && r.empCode !== dailyFilterEmp) return false;
@@ -342,7 +529,62 @@ export default function App() {
     searchQuery,
   ]);
 
-  // เปิด Modal แก้ไข/ใส่หมายเหตุของ HR
+  // สลับการเลือกแถวสำหรับ Bulk Edit
+  const toggleSelectRow = (key: string) => {
+    setSelectedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const selectAllVisibleExceptions = () => {
+    const allVisibleKeys = filteredExceptionRecords.map((r) => r.key);
+    const allSelected =
+      allVisibleKeys.length > 0 &&
+      allVisibleKeys.every((k) => selectedKeys.includes(k));
+    if (allSelected) {
+      setSelectedKeys((prev) =>
+        prev.filter((k) => !allVisibleKeys.includes(k))
+      );
+    } else {
+      setSelectedKeys((prev) =>
+        Array.from(new Set([...prev, ...allVisibleKeys]))
+      );
+    }
+  };
+
+  // ยืนยันบันทึกการแก้ไขแบบกลุ่ม (Commit Bulk Edit)
+  const handleConfirmBulkSave = async () => {
+    setHrOverrides(simulatedBulkOverrides);
+    setIsBulkPreviewOpen(false);
+    setSelectedKeys([]);
+    await triggerSaveState(
+      employeeMappings,
+      quotaRecords,
+      leaveRecords,
+      simulatedBulkOverrides,
+      settings
+    );
+  };
+
+  // ล้างการแก้ไขของแถวที่เลือกกลับเป็นค่าต้นฉบับ
+  const handleClearSelectedOverrides = async () => {
+    if (selectedKeys.length === 0) return;
+    const next = { ...hrOverrides };
+    for (const k of selectedKeys) {
+      delete next[k];
+    }
+    setHrOverrides(next);
+    setSelectedKeys([]);
+    await triggerSaveState(
+      employeeMappings,
+      quotaRecords,
+      leaveRecords,
+      next,
+      settings
+    );
+  };
+
+  // เปิด Modal แก้ไข/ใส่หมายเหตุรายวันเดี่ยว
   const handleOpenEditDaily = (record: DailyAuditRecord) => {
     const existing = hrOverrides[record.key];
     setEditingDailyRecord(record);
@@ -364,7 +606,7 @@ export default function App() {
     setOverrideNoteInput(existing?.hrNote ?? '');
   };
 
-  // บันทึก HR Override โดยไม่ทับข้อมูลดิบต้นฉบับ
+  // บันทึก HR Override เดี่ยว โดยไม่ทับข้อมูลดิบต้นฉบับ พร้อมเก็บประวัติการแก้ไข (Audit Log)
   const handleSaveDailyOverride = async () => {
     if (!editingDailyRecord) return;
     const key = editingDailyRecord.key;
@@ -384,7 +626,9 @@ export default function App() {
       nextOverrides[key] = {
         key,
         empKey: editingDailyRecord.empCode,
+        employeeName: `${editingDailyRecord.fullName} (${editingDailyRecord.nickname})`,
         date: editingDailyRecord.date,
+        previousSummary: `เข้า ${editingDailyRecord.originalScanIn} - ออก ${editingDailyRecord.originalScanOut} (${editingDailyRecord.scanStatus}${editingDailyRecord.lateMinutes > 0 ? `, สาย ${editingDailyRecord.lateMinutes} นาที` : ''})`,
         overrideScanIn: overrideScanInInput.trim() || undefined,
         overrideScanOut: overrideScanOutInput.trim() || undefined,
         overrideStatus: (overrideStatusInput ||
@@ -438,13 +682,13 @@ export default function App() {
           const latestMonth = Array.from(uploadedDates).sort().pop();
           if (latestMonth) setSelectedYearMonth(latestMonth);
           logs.push(
-            `ไฟล์ "${file.name}": นำเข้าข้อมูลสแกนนิ้ว ${res.attendanceRows.length} แถว (${Array.from(uploadedDates).join(', ')})`
+            `ไฟล์ "${file.name}": นำเข้าข้อมูลสแกนนิ้ว ${res.attendanceRows.length} แถว (แปลงคอลัมน์ G YYYY-MM-DD อัตโนมัติ: ${Array.from(uploadedDates).join(', ')})`
           );
         }
         if (res.leaveRecords.length > 0) {
           nextLeaves = res.leaveRecords;
           logs.push(
-            `ไฟล์ "${file.name}": นำเข้าประวัติการลาออนไลน์ ${res.leaveRecords.length} รายการ (แปลงวันที่ DD/MM/YYYY คอลัมน์ I, J อัตโนมัติ)`
+            `ไฟล์ "${file.name}": นำเข้าประวัติการลาออนไลน์ ${res.leaveRecords.length} รายการ (แปลงวันที่ DD/MM/YYYY คอลัมน์ I, J และตรวจสอบการลาข้ามเดือนอัตโนมัติ)`
           );
         }
         if (res.quotaRecords.length > 0) {
@@ -492,10 +736,17 @@ export default function App() {
     const emp = employeeMappings.find((m) => m.empCode === newLeaveEmpCode);
     if (!emp) return;
 
-    const hrs = parseFloat(newLeaveHours) || 8;
+    const hrs = round2(parseFloat(newLeaveHours) || 8);
+    const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const dateCheck = inspectLeaveDateRange(
+      newLeaveStartDate,
+      newLeaveEndDate || newLeaveStartDate,
+      nowStr
+    );
+
     const newRec: LeaveFormRecord = {
       id: `manual-leave-${Date.now()}`,
-      timestamp: new Date().toLocaleString('th-TH'),
+      timestamp: nowStr,
       fullName: emp.fullName,
       nickname: emp.nickname,
       empCode: emp.empCode,
@@ -503,16 +754,18 @@ export default function App() {
       department: emp.department,
       leaveType: newLeaveIsUnpaid ? 'ลาไม่รับค่าจ้าง' : newLeaveType,
       reason: newLeaveReason || 'HR บันทึกผ่านเว็บแอป',
-      startDate: newLeaveStartDate,
-      endDate: newLeaveEndDate || newLeaveStartDate,
+      startDate: dateCheck.startDate,
+      endDate: dateCheck.endDate,
       hours: hrs,
-      days: Number((hrs / 8).toFixed(4)),
+      days: round2(hrs / 8),
       attachmentUrl: '',
       status: 'อนุมัติ',
       approvedDate: new Date().toISOString().slice(0, 10),
       note: newLeaveIsUnpaid ? 'ลาไม่รับค่าจ้าง' : '',
       isUnpaidLeave: newLeaveIsUnpaid || newLeaveType === 'ลาไม่รับค่าจ้าง',
       isHistoricalCarryover: false,
+      isCrossMonth: dateCheck.isCrossMonth,
+      dateValidationNote: dateCheck.dateNote,
     };
 
     const nextLeaves = [newRec, ...leaveRecords];
@@ -531,19 +784,42 @@ export default function App() {
   const eligibleDiligenceList = auditResult.diligenceReport.filter(
     (d) => d.isEligible
   );
+  const ineligibleDiligenceList = auditResult.diligenceReport.filter(
+    (d) => !d.isEligible
+  );
   const latePeopleList = auditResult.lateSummaryReport.filter(
     (l) => l.lateCount > 0
   );
-  const unpaidOrOtherPeopleList = auditResult.unpaidAndOtherLeaveReport.filter(
-    (u) => u.totalDays > 0
+  const unpaidPeopleList = auditResult.unpaidAndOtherLeaveReport.filter(
+    (u) => u.unpaidDays > 0
   );
+  const overrideHistoryList = useMemo(
+    () =>
+      Object.values(hrOverrides).sort((a, b) =>
+        b.date.localeCompare(a.date)
+      ),
+    [hrOverrides]
+  );
+
+  // สถิติแยกย่อยของ HR Exception (32 รายการในเดือน ต.ค. 2026)
+  const anomalyMissingOutCount = auditResult.scanAnomalyRecords.filter(
+    (r) => r.scanStatus === 'พบสแกนเข้า แต่ไม่พบสแกนออก'
+  ).length;
+  const anomalyMissingInCount = auditResult.scanAnomalyRecords.filter(
+    (r) => r.scanStatus === 'ไม่พบสแกนเข้า แต่พบสแกนออก'
+  ).length;
+  const anomalyClientVisitCount = auditResult.scanAnomalyRecords.filter(
+    (r) =>
+      r.scanStatus === 'คาดว่าไปพบลูกค้า' ||
+      r.scanStatus === 'ไม่พบสแกนเข้า-ออกและไม่มีใบลา'
+  ).length;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       {/* Top Header */}
       <header className="bg-gradient-to-r from-indigo-950 via-blue-900 to-indigo-900 text-white shadow-lg no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
             <div className="flex items-start sm:items-center gap-3">
               <div className="p-2.5 bg-white/10 rounded-xl border border-white/20 backdrop-blur-sm">
                 <ShieldCheck className="w-8 h-8 text-emerald-300" />
@@ -554,36 +830,82 @@ export default function App() {
                     JCW International — HR Time Attendance & Leave Audit
                   </h1>
                   <span className="px-2.5 py-0.5 text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 rounded-full">
-                    timeattendenceJCW
+                    พร้อมคำนวณเงินเดือนจริง
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-blue-200 mt-0.5">
-                  ระบบสรุปรายงานเวลาเข้างาน การลา เบี้ยขยัน และสิทธิคงเหลือรายบุคคล
+                  ระบบสรุปรายงานเวลาเข้างาน การลา เบี้ยขยัน สิทธิคงเหลือ และตรวจสอบ HR Exception (เชื่อมฐานข้อมูล timeattendenceJCW)
                 </p>
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons: แยกรายงานเป็น 2 แบบ (รายงานหัวหน้า vs รายงาน HR/Payroll) */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* สวิตช์มุมมองรายงานบนหน้าเว็บ */}
+              <div className="inline-flex items-center bg-indigo-950/80 p-1 rounded-lg border border-white/20">
+                <button
+                  onClick={() => {
+                    setReportMode('manager');
+                    if (
+                      activeTab === 'hr_exceptions' ||
+                      activeTab === 'daily_audit'
+                    ) {
+                      setActiveTab('executive_1page');
+                    }
+                  }}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    reportMode === 'manager'
+                      ? 'bg-amber-400 text-slate-950 shadow-xs'
+                      : 'text-blue-200 hover:text-white'
+                  }`}
+                  title="สั้น อ่านง่าย ตัดข้อมูลเทคนิค"
+                >
+                  มุมมองรายงานหัวหน้า
+                </button>
+                <button
+                  onClick={() => setReportMode('hr_payroll')}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    reportMode === 'hr_payroll'
+                      ? 'bg-emerald-400 text-slate-950 shadow-xs'
+                      : 'text-blue-200 hover:text-white'
+                  }`}
+                  title="มีรายละเอียด สแกนต้นฉบับ หมายเหตุ และประวัติการแก้ไข"
+                >
+                  มุมมอง HR / Payroll
+                </button>
+              </div>
+
               <button
-                onClick={() => setIsUploadModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-medium border border-white/20 transition cursor-pointer"
+                onClick={() => exportManagerReportToExcel(auditResult)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-sm transition cursor-pointer"
+                title="ดาวน์โหลดรายงานหัวหน้า (สั้น อ่านง่าย ตัดข้อมูลเทคนิค)"
               >
-                <Upload className="w-4 h-4 text-sky-300" />
-                อัปโหลดไฟล์ Excel/CSV
+                <Download className="w-4 h-4" />
+                Excel รายงานหัวหน้า
               </button>
 
               <button
-                onClick={() => exportMonthlyAuditToExcel(auditResult)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold shadow-sm transition cursor-pointer"
+                onClick={() =>
+                  exportHRPayrollReportToExcel(auditResult, hrOverrides)
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+                title="ดาวน์โหลดรายงาน HR/Payroll (มีรายละเอียด สแกนต้นฉบับ หมายเหตุ และประวัติการแก้ไข)"
               >
                 <Download className="w-4 h-4" />
-                ดาวน์โหลดรายงาน Excel (.xlsx)
+                Excel รายงาน HR/Payroll
+              </button>
+
+              <button
+                onClick={() => setIsUploadModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/20 transition cursor-pointer"
+              >
+                <Upload className="w-4 h-4 text-sky-300" />
+                อัปโหลดไฟล์
               </button>
 
               <button
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-medium border border-white/20 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/20 transition cursor-pointer"
               >
                 <Printer className="w-4 h-4 text-amber-300" />
                 พิมพ์ / PDF
@@ -591,15 +913,17 @@ export default function App() {
 
               <button
                 onClick={() => setIsFirebaseModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-medium border border-white/20 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/20 transition cursor-pointer"
                 title={syncStatus}
               >
                 <Database
                   className={`w-4 h-4 ${
-                    isFirebaseConnected() ? 'text-emerald-300' : 'text-amber-300'
+                    isFirebaseConnected()
+                      ? 'text-emerald-300'
+                      : 'text-amber-300'
                   }`}
                 />
-                Firebase DB
+                Firebase
               </button>
             </div>
           </div>
@@ -614,7 +938,10 @@ export default function App() {
                 </label>
                 <select
                   value={selectedYearMonth}
-                  onChange={(e) => setSelectedYearMonth(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedYearMonth(e.target.value);
+                    setSelectedKeys([]);
+                  }}
                   className="bg-indigo-950 text-white text-sm font-semibold rounded px-2 py-0.5 border border-indigo-400/40 focus:outline-none"
                 >
                   {availableMonths.map((ym) => (
@@ -631,74 +958,82 @@ export default function App() {
                 <strong className="text-white">
                   {auditResult.workdaysInMonth.length} วัน
                 </strong>{' '}
-                | พนักงานที่ตรวจสอบ:{' '}
+                | พนักงานทั้งหมดในเดือน:{' '}
                 <strong className="text-white">
                   {auditResult.activitySummaryReport.length} คน
+                </strong>{' '}
+                | โหมดแสดงผล:{' '}
+                <strong className="text-amber-300">
+                  {reportMode === 'manager'
+                    ? 'รายงานหัวหน้า (สั้น อ่านง่าย ตัดข้อมูลเทคนิค)'
+                    : 'รายงาน HR/Payroll (ละเอียด + สแกนต้นฉบับ + ประวัติแก้ไข)'}
                 </strong>
               </span>
             </div>
 
-            {/* Smart Audit Toggles */}
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              <label className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10">
-                <input
-                  type="checkbox"
-                  checked={settings.onlyApprovedLeaves}
-                  onChange={(e) => {
-                    const next = {
-                      ...settings,
-                      onlyApprovedLeaves: e.target.checked,
-                    };
-                    setSettings(next);
-                    triggerSaveState(
-                      employeeMappings,
-                      quotaRecords,
-                      leaveRecords,
-                      hrOverrides,
-                      next
-                    );
-                  }}
-                  className="rounded text-emerald-500"
-                />
-                <span>เฉพาะใบลาที่ &quot;อนุมัติ&quot;</span>
-              </label>
+            {/* Smart Audit Toggles (ซ่อนเมื่ออยู่ในโหมดหัวหน้าเพื่อตัดข้อมูลเทคนิค) */}
+            {reportMode === 'hr_payroll' && (
+              <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10">
+                  <input
+                    type="checkbox"
+                    checked={settings.onlyApprovedLeaves}
+                    onChange={(e) => {
+                      const next = {
+                        ...settings,
+                        onlyApprovedLeaves: e.target.checked,
+                      };
+                      setSettings(next);
+                      triggerSaveState(
+                        employeeMappings,
+                        quotaRecords,
+                        leaveRecords,
+                        hrOverrides,
+                        next
+                      );
+                    }}
+                    className="rounded text-emerald-500"
+                  />
+                  <span>เฉพาะใบลาที่ &quot;อนุมัติ&quot;</span>
+                </label>
 
-              <label
-                className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10"
-                title="กรองรายการที่ HR กรอกสะสมย้อนหลัง เช่น 'บันทึกเก่า', 'บันทึกลาเก่า', 'ทดสอบ' ออกจากการคำนวณรายเดือน"
-              >
-                <input
-                  type="checkbox"
-                  checked={settings.excludeCarryoverLeaves}
-                  onChange={(e) => {
-                    const next = {
-                      ...settings,
-                      excludeCarryoverLeaves: e.target.checked,
-                    };
-                    setSettings(next);
-                    triggerSaveState(
-                      employeeMappings,
-                      quotaRecords,
-                      leaveRecords,
-                      hrOverrides,
-                      next
-                    );
-                  }}
-                  className="rounded text-emerald-500"
-                />
-                <span>ไม่นับแถว &quot;บันทึกเก่า/ทดสอบ&quot; ในฟอร์มลา</span>
-              </label>
+                <label
+                  className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10"
+                  title="กรองรายการที่ HR กรอกสะสมย้อนหลัง เช่น 'บันทึกเก่า', 'บันทึกลาเก่า', 'ทดสอบ' ออกจากการคำนวณรายเดือน"
+                >
+                  <input
+                    type="checkbox"
+                    checked={settings.excludeCarryoverLeaves}
+                    onChange={(e) => {
+                      const next = {
+                        ...settings,
+                        excludeCarryoverLeaves: e.target.checked,
+                      };
+                      setSettings(next);
+                      triggerSaveState(
+                        employeeMappings,
+                        quotaRecords,
+                        leaveRecords,
+                        hrOverrides,
+                        next
+                      );
+                    }}
+                    className="rounded text-emerald-500"
+                  />
+                  <span>ไม่นับแถว &quot;บันทึกเก่า/ทดสอบ&quot;</span>
+                </label>
 
-              <label className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10">
-                <input
-                  type="checkbox"
-                  checked={onlyMappedEmployees}
-                  onChange={(e) => setOnlyMappedEmployees(e.target.checked)}
-                  className="rounded text-emerald-500"
-                />
-                <span>เฉพาะพนักงานปัจจุบันของบริษัท</span>
-              </label>
-            </div>
+                <label className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10">
+                  <input
+                    type="checkbox"
+                    checked={onlyMappedEmployees}
+                    onChange={(e) => setOnlyMappedEmployees(e.target.checked)}
+                    className="rounded text-emerald-500"
+                  />
+                  <span>เฉพาะพนักงานปัจจุบัน</span>
+                </label>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -708,6 +1043,22 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 overflow-x-auto">
           <div className="flex items-center space-x-1 py-2 min-w-max">
             {[
+              {
+                id: 'executive_1page',
+                label: 'สรุปผู้บริหาร (1 หน้า)',
+                icon: LayoutDashboard,
+                badge: 'Executive',
+              },
+              ...(reportMode === 'hr_payroll'
+                ? [
+                    {
+                      id: 'hr_exceptions',
+                      label: 'HR Exception (รายการผิดปกติ)',
+                      icon: ShieldAlert,
+                      badge: `${auditResult.scanAnomalyRecords.length} รายการ`,
+                    },
+                  ]
+                : []),
               {
                 id: 'overview',
                 label: 'สรุปครบทั้ง 6 รายงาน',
@@ -730,7 +1081,7 @@ export default function App() {
                 id: 'report3_unpaid',
                 label: '3. ลาไม่รับค่าจ้าง/อื่นๆ',
                 icon: AlertTriangle,
-                badge: `${Number((auditResult.activityGrandTotal.unpaidDays + auditResult.activityGrandTotal.otherDays).toFixed(2))} วัน`,
+                badge: `${format2(auditResult.activityGrandTotal.unpaidDays)} วัน`,
               },
               {
                 id: 'report4_monthly_leave',
@@ -742,7 +1093,7 @@ export default function App() {
                 id: 'report5_activity',
                 label: '5. สรุปกิจกรรมลา & สาย',
                 icon: FileSpreadsheet,
-                badge: 'ตารางรวม',
+                badge: `${format2(auditResult.activityGrandTotal.totalLeaveDays)} วัน`,
               },
               {
                 id: 'report6_quota',
@@ -750,12 +1101,16 @@ export default function App() {
                 icon: UserCheck,
                 badge: `${auditResult.quotaReport.length} คน`,
               },
-              {
-                id: 'daily_audit',
-                label: 'ตรวจสอบสแกนนิ้ว & แก้ไข/หมายเหตุ',
-                icon: Edit3,
-                badge: `${auditResult.scanAnomalyRecords.length} แจ้งเตือน`,
-              },
+              ...(reportMode === 'hr_payroll'
+                ? [
+                    {
+                      id: 'daily_audit',
+                      label: 'สแกนต้นฉบับ & ประวัติแก้ไข HR',
+                      icon: Edit3,
+                      badge: `${overrideHistoryList.length} แก้ไข`,
+                    },
+                  ]
+                : []),
               {
                 id: 'company_rules',
                 label: 'รายชื่อพนักงาน & กฎบริษัท',
@@ -781,6 +1136,8 @@ export default function App() {
                       className={`px-1.5 py-0.5 text-[11px] rounded-full font-semibold ${
                         isActive
                           ? 'bg-white/20 text-white'
+                          : tab.id === 'hr_exceptions'
+                          ? 'bg-rose-100 text-rose-800'
                           : 'bg-slate-100 text-slate-700'
                       }`}
                     >
@@ -799,7 +1156,9 @@ export default function App() {
         {/* Print Header */}
         <div className="hidden print:block border-b-2 border-slate-800 pb-4 mb-6">
           <h1 className="text-2xl font-bold text-slate-900">
-            รายงานสรุปเวลาทำงานและการลาพนักงาน — บริษัท JCW International
+            {reportMode === 'manager'
+              ? 'รายงานสรุปสำหรับหัวหน้างานและผู้บริหาร — บริษัท JCW International'
+              : 'รายงานตรวจสอบเวลาทำงานและการลาสำหรับ HR / Payroll — บริษัท JCW International'}
           </h1>
           <p className="text-sm text-slate-600 mt-1">
             ประจำเดือน: {formatYearMonthThai(selectedYearMonth)} | พิมพ์เมื่อ:{' '}
@@ -807,120 +1166,738 @@ export default function App() {
           </p>
         </div>
 
-        {/* KPI Cards ด้านบน */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div
-            onClick={() => setActiveTab('report1_diligence')}
-            className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:border-emerald-400 transition cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">
-                1. ผู้ได้รับเบี้ยขยัน
-              </span>
-              <Award className="w-5 h-5 text-emerald-600" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-slate-900">
-                {eligibleDiligenceList.length}
-              </span>
-              <span className="text-xs text-slate-500">
-                / {auditResult.diligenceReport.length} คน
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-600 truncate">
-              {eligibleDiligenceList.length > 0
-                ? eligibleDiligenceList
-                    .map((e) => `${e.fullName} (${e.nickname})`)
-                    .join(', ')
-                : 'ไม่มีผู้ผ่านเกณฑ์ในเดือนนี้'}
-            </p>
-          </div>
+        {/* ===================================================================== */}
+        {/* PRIORITY 3: หน้าสรุปผู้บริหาร 1 หน้า (Executive 1-Page Summary) */}
+        {/* แสดงเฉพาะ 5 หัวข้อหลักตามที่ผู้ใช้กำหนด */}
+        {/* ===================================================================== */}
+        {activeTab === 'executive_1page' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-4">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
+                    <LayoutDashboard className="w-3.5 h-3.5" />
+                    Executive 1-Page Summary
+                  </span>
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mt-2">
+                    หน้าสรุปผู้บริหาร 1 หน้า — ประจำเดือน{' '}
+                    {formatYearMonthThai(selectedYearMonth)}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
+                    สรุปเฉพาะ 5 ตัวชี้วัดหลักก่อนอนุมัติจ่ายเงินเดือน (ใช้สูตรและการปัดเศษทศนิยม 2 ตำแหน่งตรงกันทุกรายงาน)
+                  </p>
+                </div>
 
-          <div
-            onClick={() => setActiveTab('report2_late')}
-            className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:border-amber-400 transition cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md">
-                2. สถิติเข้างานสาย
-              </span>
-              <Clock className="w-5 h-5 text-amber-600" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-slate-900">
-                {latePeopleList.length} คน
-              </span>
-              <span className="text-xs font-semibold text-amber-700">
-                ({auditResult.activityGrandTotal.lateCount} ครั้ง /{' '}
-                {auditResult.activityGrandTotal.lateMinutes} นาที)
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-600">
-              เกณฑ์สาย 08:16 น. (ฝ่ายขายหลังพบลูกค้า 09:01 น.)
-            </p>
-          </div>
+                <div className="flex flex-wrap items-center gap-2 no-print">
+                  <button
+                    onClick={() => exportManagerReportToExcel(auditResult)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    ดาวน์โหลดรายงานหัวหน้า (.xlsx)
+                  </button>
+                  <button
+                    onClick={() =>
+                      exportHRPayrollReportToExcel(auditResult, hrOverrides)
+                    }
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    ดาวน์โหลดรายงาน HR/Payroll (.xlsx)
+                  </button>
+                </div>
+              </div>
 
-          <div
-            onClick={() => setActiveTab('report3_unpaid')}
-            className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:border-rose-400 transition cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md">
-                3. ลาไม่รับค่าจ้าง & อื่นๆ
-              </span>
-              <AlertTriangle className="w-5 h-5 text-rose-600" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-slate-900">
-                {Number(
-                  (
-                    auditResult.activityGrandTotal.unpaidDays +
-                    auditResult.activityGrandTotal.otherDays
-                  ).toFixed(2)
-                )}{' '}
-                วัน
-              </span>
-              <span className="text-xs text-rose-700 font-semibold">
-                (
-                {Number(
-                  (
-                    auditResult.activityGrandTotal.unpaidHours +
-                    auditResult.activityGrandTotal.otherHours
-                  ).toFixed(1)
-                )}{' '}
-                ชม.)
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-600">
-              ผู้ลาไม่รับค่าจ้าง/อื่นๆ จำนวน {unpaidOrOtherPeopleList.length} คน
-            </p>
-          </div>
+              {/* 5 Executive KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
+                {/* 1. พนักงานทั้งหมด */}
+                <div className="rounded-xl p-4 bg-slate-50 border border-slate-200 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-600 uppercase">
+                        1. พนักงานทั้งหมด
+                      </span>
+                      <Users className="w-5 h-5 text-slate-700" />
+                    </div>
+                    <div className="mt-3 flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-slate-900">
+                        {auditResult.activitySummaryReport.length}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-600">
+                        คน
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">
+                    วันทำงานที่มีข้อมูลในเดือนนี้{' '}
+                    <strong className="text-slate-800">
+                      {auditResult.workdaysInMonth.length} วันทำการ
+                    </strong>
+                  </p>
+                </div>
 
-          <div
-            onClick={() => setActiveTab('report5_activity')}
-            className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:border-indigo-400 transition cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md">
-                4–5. รวมวันลาทุกประเภท
-              </span>
-              <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+                {/* 2. มาสายกี่คน / กี่ครั้ง / กี่นาที */}
+                <div
+                  onClick={() => setActiveTab('report2_late')}
+                  className="rounded-xl p-4 bg-amber-50/60 border border-amber-200 hover:border-amber-400 transition cursor-pointer flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-900 uppercase">
+                        2. มาสาย (คน / ครั้ง / นาที)
+                      </span>
+                      <Clock className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+                      <span className="text-2xl font-extrabold text-amber-950">
+                        {latePeopleList.length} คน
+                      </span>
+                      <span className="text-sm font-bold text-amber-800">
+                        / {auditResult.activityGrandTotal.lateCount} ครั้ง
+                      </span>
+                      <span className="text-sm font-bold text-rose-600">
+                        / {auditResult.activityGrandTotal.lateMinutes} นาที
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-amber-900/80">
+                    ไม่มีสาย {auditResult.lateSummaryReport.length - latePeopleList.length}{' '}
+                    คน | คลิกเพื่อดูรายชื่อผู้มาสาย
+                  </p>
+                </div>
+
+                {/* 3. ลาไม่รับค่าจ้างกี่วัน */}
+                <div
+                  onClick={() => setActiveTab('report3_unpaid')}
+                  className="rounded-xl p-4 bg-rose-50/60 border border-rose-200 hover:border-rose-400 transition cursor-pointer flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-900 uppercase">
+                        3. ลาไม่รับค่าจ้างกี่วัน
+                      </span>
+                      <AlertTriangle className="w-5 h-5 text-rose-600" />
+                    </div>
+                    <div className="mt-3 flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-rose-700">
+                        {format2(auditResult.activityGrandTotal.unpaidDays)}
+                      </span>
+                      <span className="text-sm font-bold text-rose-900">
+                        วัน ({format2(auditResult.activityGrandTotal.unpaidHours)}{' '}
+                        ชม.)
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-rose-900/80">
+                    จำนวนผู้ลาไม่รับค่าจ้าง {unpaidPeopleList.length} คน (รวมวันลาทุกประเภททั้งเดือน{' '}
+                    {format2(auditResult.activityGrandTotal.totalLeaveDays)} วัน)
+                  </p>
+                </div>
+
+                {/* 4. ผู้ได้รับ / ไม่ได้รับเบี้ยขยัน */}
+                <div
+                  onClick={() => setActiveTab('report1_diligence')}
+                  className="rounded-xl p-4 bg-emerald-50/60 border border-emerald-200 hover:border-emerald-400 transition cursor-pointer flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900 uppercase">
+                        4. ได้รับ / ไม่ได้รับเบี้ยขยัน
+                      </span>
+                      <Award className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-2xl font-extrabold text-emerald-700">
+                        ได้ {eligibleDiligenceList.length} คน
+                      </span>
+                      <span className="text-sm font-bold text-slate-600">
+                        / ไม่ได้ {ineligibleDiligenceList.length} คน
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-emerald-900/80 truncate">
+                    {eligibleDiligenceList.length > 0
+                      ? `ได้แก่: ${eligibleDiligenceList.map((e) => e.nickname).join(', ')}`
+                      : 'ไม่มีผู้ผ่านเกณฑ์เบี้ยขยันในเดือนนี้'}
+                  </p>
+                </div>
+
+                {/* 5. รายการที่ต้องให้ HR ตรวจสอบ */}
+                <div
+                  onClick={() => {
+                    setReportMode('hr_payroll');
+                    setActiveTab('hr_exceptions');
+                  }}
+                  className="rounded-xl p-4 bg-indigo-50/70 border border-indigo-200 hover:border-indigo-400 transition cursor-pointer flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-900 uppercase">
+                        5. รายการที่ HR ต้องตรวจสอบ
+                      </span>
+                      <ShieldAlert className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div className="mt-3 flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-indigo-700">
+                        {auditResult.scanAnomalyRecords.length}
+                      </span>
+                      <span className="text-sm font-bold text-indigo-900">
+                        รายการผิดปกติ
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-indigo-900/80">
+                    ไม่สแกนออก {anomalyMissingOutCount} | ไม่สแกนเข้า{' '}
+                    {anomalyMissingInCount} | พบลูกค้า {anomalyClientVisitCount}
+                  </p>
+                </div>
+              </div>
+
+              {/* รายละเอียดสรุปในหน้าเดียว (แบ่ง 2 คอลัมน์อ่านง่าย) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                {/* ซ้าย: ผู้ได้รับ / ไม่ได้รับเบี้ยขยัน */}
+                <div className="rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-3 bg-emerald-50/70 border-b border-slate-200 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-emerald-600" />
+                      สรุปผู้ได้รับ / ไม่ได้รับเบี้ยขยัน ({auditResult.diligenceReport.length} คน)
+                    </h3>
+                    <span className="text-xs font-semibold text-emerald-800">
+                      ได้รับ {eligibleDiligenceList.length} คน | ไม่ได้รับ{' '}
+                      {ineligibleDiligenceList.length} คน
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-3 text-xs sm:text-sm">
+                    <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+                      <div className="font-bold text-emerald-950 mb-1">
+                        ผู้ได้รับเบี้ยขยัน ({eligibleDiligenceList.length} คน):
+                      </div>
+                      {eligibleDiligenceList.length === 0 ? (
+                        <div className="text-slate-500">ไม่มีผู้ได้รับในเดือนนี้</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {eligibleDiligenceList.map((e, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-emerald-300 text-emerald-900 font-semibold shadow-2xs"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              {e.fullName} ({e.nickname}) — {e.position} [ลา{' '}
+                              {format2(e.totalLeaveDays)} วัน]
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="font-bold text-slate-800 mb-1.5">
+                        ผู้ไม่ได้รับเบี้ยขยัน ({ineligibleDiligenceList.length} คน) และสาเหตุสรุป:
+                      </div>
+                      <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                        {ineligibleDiligenceList.map((item, i) => (
+                          <div
+                            key={i}
+                            className="px-3 py-2 flex items-start justify-between gap-2 hover:bg-slate-50 text-xs"
+                          >
+                            <div>
+                              <span className="font-semibold text-slate-900">
+                                {item.fullName} ({item.nickname})
+                              </span>{' '}
+                              <span className="text-slate-500">
+                                • {item.position}
+                              </span>
+                            </div>
+                            <span className="text-rose-700 text-right font-medium">
+                              {item.disqualifyReasons[0] || '-'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ขวา: สรุปคนมาสาย + ลาไม่รับค่าจ้าง + รายการที่ HR ต้องตรวจสอบ */}
+                <div className="space-y-4">
+                  {/* มาสาย & ลาไม่รับค่าจ้าง */}
+                  <div className="rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="px-4 py-3 bg-amber-50/70 border-b border-slate-200 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-amber-600" />
+                        รายชื่อผู้มาสาย ({latePeopleList.length} คน) และผู้ลาไม่รับค่าจ้าง ({unpaidPeopleList.length} คน)
+                      </h3>
+                    </div>
+                    <div className="p-4 space-y-3 text-xs">
+                      <div>
+                        <div className="font-bold text-amber-950 mb-1">
+                          ผู้มาสายรวม {latePeopleList.length} คน ({auditResult.activityGrandTotal.lateCount} ครั้ง / {auditResult.activityGrandTotal.lateMinutes} นาที):
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {latePeopleList.map((p, idx) => (
+                            <div
+                              key={idx}
+                              className="px-2.5 py-1.5 rounded bg-amber-50/60 border border-amber-200 flex items-center justify-between"
+                            >
+                              <span className="font-medium text-slate-900">
+                                {p.fullName} ({p.nickname})
+                              </span>
+                              <span className="font-bold text-rose-700">
+                                {p.lateCount} ครั้ง ({p.lateMinutes} นาที)
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200">
+                        <div className="font-bold text-rose-950 mb-1">
+                          ผู้ลาไม่รับค่าจ้างรวม{' '}
+                          {format2(auditResult.activityGrandTotal.unpaidDays)} วัน (
+                          {format2(auditResult.activityGrandTotal.unpaidHours)} ชม.):
+                        </div>
+                        {unpaidPeopleList.length === 0 ? (
+                          <div className="text-slate-500">
+                            ไม่มีการลาไม่รับค่าจ้างในเดือนนี้ (0.00 วัน)
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            {unpaidPeopleList.map((u, idx) => (
+                              <div
+                                key={idx}
+                                className="px-2.5 py-1.5 rounded bg-rose-50/60 border border-rose-200 flex items-center justify-between"
+                              >
+                                <span className="font-medium text-slate-900">
+                                  {u.fullName} ({u.nickname}) — {u.position}
+                                </span>
+                                <span className="font-bold text-rose-700">
+                                  {format2(u.unpaidDays)} วัน ({format2(u.unpaidHours)}{' '}
+                                  ชม.)
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* รายการที่ต้องให้ HR ตรวจสอบ (32 รายการ) */}
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-sm font-bold text-indigo-950 flex items-center gap-1.5">
+                        <ShieldAlert className="w-4 h-4 text-indigo-600" />
+                        รายการที่ต้องให้ HR ตรวจสอบ: {auditResult.scanAnomalyRecords.length} รายการ
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        • พบสแกนเข้า แต่ไม่พบสแกนออก: <strong>{anomalyMissingOutCount} รายการ</strong> | ไม่พบสแกนเข้า แต่พบสแกนออก: <strong>{anomalyMissingInCount} รายการ</strong> | ฝ่ายขายคาดว่าไปพบลูกค้า: <strong>{anomalyClientVisitCount} รายการ</strong>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setReportMode('hr_payroll');
+                        setActiveTab('hr_exceptions');
+                      }}
+                      className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shrink-0 cursor-pointer shadow-xs no-print"
+                    >
+                      เปิดหน้า HR Exception ({auditResult.scanAnomalyRecords.length})
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-slate-900">
-                {auditResult.activityGrandTotal.totalLeaveDays} วัน
-              </span>
-              <span className="text-xs text-indigo-700 font-semibold">
-                ({auditResult.activityGrandTotal.totalLeaveHours} ชม.)
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-600">
-              ป่วย {auditResult.activityGrandTotal.sickDays} | กิจ{' '}
-              {auditResult.activityGrandTotal.personalDays} | พักร้อน{' '}
-              {auditResult.activityGrandTotal.vacationDays} วัน
-            </p>
           </div>
-        </div>
+        )}
+
+        {/* ===================================================================== */}
+        {/* PRIORITY 4 & 5: หน้า HR Exception (เฉพาะรายการผิดปกติ 32 รายการ) */}
+        {/* พร้อมระบบแก้ไขแบบกลุ่ม (Bulk Edit) + แสดงผลกระทบก่อนบันทึก (Impact Preview) */}
+        {/* ===================================================================== */}
+        {activeTab === 'hr_exceptions' && (
+          <section className="space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="px-5 py-4 bg-rose-50/70 border-b border-rose-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <ShieldAlert className="w-5 h-5 text-rose-600" />
+                    <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                      หน้า HR Exception — แสดงเฉพาะรายการสแกนนิ้วผิดปกติ ({auditResult.scanAnomalyRecords.length} รายการ)
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white">
+                      ต้องตรวจสอบก่อนปิดงวดเงินเดือน
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1">
+                    แสดงเฉพาะรายการที่สแกนนิ้วไม่ครบ หรือฝ่ายขายไม่พบสแกนนิ้ว (ไม่รวมวันที่ลาเต็มวัน 3 รายการที่มีใบลาถูกต้องแล้ว) สามารถติ๊กเลือกหลายรายการเพื่อแก้ไขแบบกลุ่มและดูผลกระทบก่อนบันทึกได้ทันที
+                  </p>
+                </div>
+
+                {/* ปุ่มกรองย่อยตามประเภทความผิดปกติ */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    {
+                      id: 'ALL',
+                      label: `ทั้งหมด (${auditResult.scanAnomalyRecords.length})`,
+                    },
+                    {
+                      id: 'MISSING_OUT',
+                      label: `มีเข้า-ไม่มีออก (${anomalyMissingOutCount})`,
+                    },
+                    {
+                      id: 'MISSING_IN',
+                      label: `ไม่มีเข้า-มีออก (${anomalyMissingInCount})`,
+                    },
+                    {
+                      id: 'CLIENT_VISIT',
+                      label: `คาดว่าพบลูกค้า/ไม่สแกน (${anomalyClientVisitCount})`,
+                    },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() =>
+                        setExceptionSubFilter(
+                          f.id as typeof exceptionSubFilter
+                        )
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        exceptionSubFilter === f.id
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* แถบเครื่องมือแก้ไขแบบกลุ่ม (Bulk Edit Toolbar) */}
+              <div className="p-4 bg-indigo-50/70 border-b border-indigo-200 space-y-3 no-print">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-indigo-950">
+                      <CheckSquare className="w-4 h-4 text-indigo-600" />
+                      ระบบแก้ไขแบบกลุ่ม (Bulk Edit): เลือกแล้ว{' '}
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white">
+                        {selectedKeys.length} รายการ
+                      </span>
+                    </span>
+
+                    <button
+                      onClick={selectAllVisibleExceptions}
+                      className="px-2.5 py-1 rounded bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-medium cursor-pointer"
+                    >
+                      {filteredExceptionRecords.length > 0 &&
+                      filteredExceptionRecords.every((r) =>
+                        selectedKeys.includes(r.key)
+                      )
+                        ? 'ยกเลิกเลือกทั้งหมดในหน้านี้'
+                        : `เลือกทั้งหมดในหน้านี้ (${filteredExceptionRecords.length})`}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const keys = auditResult.scanAnomalyRecords
+                          .filter(
+                            (r) =>
+                              r.scanStatus === 'พบสแกนเข้า แต่ไม่พบสแกนออก'
+                          )
+                          .map((r) => r.key);
+                        setSelectedKeys(keys);
+                        setBulkStatusInput('ครบปกติ');
+                        setBulkScanOutInput('17:00:00');
+                        setBulkNoteInput(
+                          'HR ตรวจสอบแล้ว: อนุโลมเวลาออก 17:00 น. (ลืมสแกนออก)'
+                        );
+                      }}
+                      className="px-2.5 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-semibold cursor-pointer"
+                    >
+                      เลือกกลุ่ม &quot;มีเข้า-ไม่มีออก&quot; ทั้งหมด ({anomalyMissingOutCount})
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const keys = auditResult.scanAnomalyRecords
+                          .filter(
+                            (r) => r.scanStatus === 'คาดว่าไปพบลูกค้า'
+                          )
+                          .map((r) => r.key);
+                        setSelectedKeys(keys);
+                        setBulkStatusInput('คาดว่าไปพบลูกค้า');
+                        setBulkScanOutInput('');
+                        setBulkNoteInput(
+                          'HR ยืนยัน: ฝ่ายขายออกพบลูกค้าตามตารางงาน'
+                        );
+                      }}
+                      className="px-2.5 py-1 rounded bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 text-xs font-semibold cursor-pointer"
+                    >
+                      เลือกกลุ่ม &quot;คาดว่าไปพบลูกค้า&quot; ทั้งหมด ({anomalyClientVisitCount})
+                    </button>
+
+                    {selectedKeys.length > 0 && (
+                      <button
+                        onClick={() => setSelectedKeys([])}
+                        className="px-2 py-1 rounded text-xs text-slate-600 hover:text-slate-900 cursor-pointer"
+                      >
+                        ล้างการเลือก
+                      </button>
+                    )}
+                  </div>
+
+                  {selectedKeys.length > 0 && (
+                    <button
+                      onClick={handleClearSelectedOverrides}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-semibold cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      คืนค่าต้นฉบับเฉพาะที่เลือก
+                    </button>
+                  )}
+                </div>
+
+                {/* ฟอร์มกำหนดค่า Bulk Edit */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 items-end pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      1. ปรับสถานะเป็น:
+                    </label>
+                    <select
+                      value={bulkStatusInput}
+                      onChange={(e) => setBulkStatusInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                    >
+                      <option value="ครบปกติ">ครบปกติ (เคลียร์ออกจาก HR Exception)</option>
+                      <option value="คาดว่าไปพบลูกค้า">คาดว่าไปพบลูกค้า (ฝ่ายขาย)</option>
+                      <option value="ลาเต็มวัน/มีข้อมูลการลา">ลาเต็มวัน/มีข้อมูลการลา</option>
+                      <option value="พบสแกนเข้า แต่ไม่พบสแกนออก">พบสแกนเข้า แต่ไม่พบสแกนออก</option>
+                      <option value="ไม่พบสแกนเข้า แต่พบสแกนออก">ไม่พบสแกนเข้า แต่พบสแกนออก</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      2. เวลาเข้าที่ปรับแก้ (ถ้ามี):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น 08:00:00 (เว้นว่าง=ค่าเดิม)"
+                      value={bulkScanInInput}
+                      onChange={(e) => setBulkScanInInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      3. เวลาออกที่ปรับแก้ (ถ้ามี):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น 17:00:00 (เว้นว่าง=ค่าเดิม)"
+                      value={bulkScanOutInput}
+                      onChange={(e) => setBulkScanOutInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-mono"
+                    />
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      4. หมายเหตุ HR สำหรับกลุ่มที่เลือก:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="ระบุหมายเหตุ เช่น อนุโลมลืมสแกนออก / ยืนยันไปพบลูกค้า..."
+                      value={bulkNoteInput}
+                      onChange={(e) => setBulkNoteInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bulkWaiveLate}
+                        onChange={(e) => setBulkWaiveLate(e.target.checked)}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="font-medium">ยกเว้นสาย (สาย = 0)</span>
+                    </label>
+                    <button
+                      disabled={selectedKeys.length === 0}
+                      onClick={() => setIsBulkPreviewOpen(true)}
+                      className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold shadow-xs transition ${
+                        selectedKeys.length > 0
+                          ? 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <Eye className="w-4 h-4" />
+                      ดูผลกระทบก่อนบันทึก ({selectedKeys.length})
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ตารางรายการผิดปกติ HR Exception */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                      <th className="py-2.5 px-3 text-center w-10 no-print">
+                        <input
+                          type="checkbox"
+                          checked={
+                            filteredExceptionRecords.length > 0 &&
+                            filteredExceptionRecords.every((r) =>
+                              selectedKeys.includes(r.key)
+                            )
+                          }
+                          onChange={selectAllVisibleExceptions}
+                          className="rounded text-indigo-600 cursor-pointer"
+                        />
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold">ลำดับ</th>
+                      <th className="py-2.5 px-3 font-semibold">วันที่</th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        ชื่อ-นามสกุล (ชื่อเล่น)
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold">
+                        ตำแหน่ง / แผนก
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold text-center">
+                        สแกนต้นฉบับ (เข้า - ออก)
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold text-center">
+                        เวลาที่ใช้คำนวณ
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        สาเหตุความผิดปกติ (HR Exception)
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        หมายเหตุชีตเดิม / หมายเหตุ HR
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold text-center no-print">
+                        จัดการรายคน
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredExceptionRecords.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={10}
+                          className="py-10 text-center text-slate-500"
+                        >
+                          ไม่พบรายการผิดปกติในตัวกรองที่เลือก
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredExceptionRecords.map((r, idx) => {
+                        const isChecked = selectedKeys.includes(r.key);
+                        return (
+                          <tr
+                            key={r.key}
+                            className={
+                              isChecked
+                                ? 'bg-indigo-50/80 hover:bg-indigo-100/70'
+                                : r.salesStatus === 'คาดว่าไปพบลูกค้า'
+                                ? 'bg-sky-50/40 hover:bg-sky-50/70'
+                                : 'bg-amber-50/30 hover:bg-amber-50/60'
+                            }
+                          >
+                            <td className="py-2.5 px-3 text-center no-print">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleSelectRow(r.key)}
+                                className="rounded text-indigo-600 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 px-2.5 text-slate-500 font-medium">
+                              {idx + 1}
+                            </td>
+                            <td className="py-2.5 px-3 font-medium whitespace-nowrap">
+                              {formatDateDisplay(r.date)}{' '}
+                              <span className="text-slate-500">
+                                ({r.dayOfWeek})
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-slate-900">
+                              {r.fullName}{' '}
+                              <span className="text-slate-500 font-normal">
+                                ({r.nickname})
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2.5">
+                              <div className="font-medium text-slate-800">
+                                {r.position}
+                              </div>
+                              <div className="text-slate-500 text-[11px]">
+                                {r.department}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-2.5 text-center font-mono text-slate-700">
+                              {r.originalScanIn} - {r.originalScanOut}
+                            </td>
+                            <td className="py-2.5 px-2.5 text-center font-mono font-bold text-slate-900">
+                              {r.effectiveScanIn} - {r.effectiveScanOut}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                  r.scanStatus === 'คาดว่าไปพบลูกค้า'
+                                    ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                                    : r.scanStatus ===
+                                      'ไม่พบสแกนเข้า แต่พบสแกนออก'
+                                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                }`}
+                              >
+                                {r.alertMessage || r.scanStatus}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 space-y-0.5">
+                              {r.leaveDetails.length > 0 && (
+                                <div className="text-indigo-700 font-medium">
+                                  ใบลา: {r.leaveDetails.join(', ')}
+                                </div>
+                              )}
+                              {r.sheetNote && (
+                                <div className="text-slate-600">
+                                  หมายเหตุชีตเดิม: <strong>{r.sheetNote}</strong>
+                                </div>
+                              )}
+                              {r.hrNote && (
+                                <div className="text-emerald-700 font-semibold">
+                                  HR Override: {r.hrNote}
+                                </div>
+                              )}
+                              {!r.sheetNote &&
+                                !r.hrNote &&
+                                r.leaveDetails.length === 0 && (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center no-print">
+                              <button
+                                onClick={() => handleOpenEditDaily(r)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold transition cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                แก้ไขเดี่ยว
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ===================================================================== */}
         {/* REPORT 1: ผู้ได้รับเบี้ยขยัน */}
@@ -935,11 +1912,12 @@ export default function App() {
                   {formatYearMonthThai(selectedYearMonth)}
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  เงื่อนไขเบี้ยขยัน: (1) พนักงานทุกแผนก (รวมฝ่ายขาย ยกเว้นตำแหน่งเจ้าหน้าที่ฝ่ายขาย) (2) ทุกวันทำงานต้องสแกนเข้างานไม่เกิน 08:00 น. (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.0 วัน
+                  เงื่อนไขเบี้ยขยัน: (1) พนักงานทุกแผนก (รวมฝ่ายขาย ยกเว้นตำแหน่งเจ้าหน้าที่ฝ่ายขาย) (2) ทุกวันทำงานต้องสแกนเข้างานไม่เกิน 08:00 น. (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.00 วัน
                 </p>
               </div>
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 self-start sm:self-center">
-                ผ่านเกณฑ์ {eligibleDiligenceList.length} คน
+                ได้รับ {eligibleDiligenceList.length} คน / ไม่ได้รับ{' '}
+                {ineligibleDiligenceList.length} คน
               </span>
             </div>
 
@@ -948,14 +1926,26 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">
+                      ชื่อ-นามสกุล (ชื่อเล่น)
+                    </th>
                     <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">วันมาทำงาน</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">สแกนหลัง 08:00</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">วันลารวมในเดือน</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">สถานะเบี้ยขยัน</th>
-                    <th className="py-2.5 px-3 font-semibold">เหตุผล / รายละเอียดการตรวจสอบ</th>
+                    <th className="py-2.5 px-3 font-semibold text-center">
+                      วันมาทำงาน
+                    </th>
+                    <th className="py-2.5 px-3 font-semibold text-center">
+                      สแกนหลัง 08:00
+                    </th>
+                    <th className="py-2.5 px-3 font-semibold text-center">
+                      วันลารวมในเดือน
+                    </th>
+                    <th className="py-2.5 px-3 font-semibold text-center">
+                      สถานะเบี้ยขยัน
+                    </th>
+                    <th className="py-2.5 px-3 font-semibold">
+                      เหตุผล / รายละเอียดการตรวจสอบ
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -975,9 +1965,13 @@ export default function App() {
                           ({item.nickname})
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-700">{item.position}</td>
+                      <td className="py-2.5 px-3 text-slate-700">
+                        {item.position}
+                      </td>
                       <td className="py-2.5 px-3">{item.department}</td>
-                      <td className="py-2.5 px-3 text-center">{item.daysWorked} วัน</td>
+                      <td className="py-2.5 px-3 text-center">
+                        {item.daysWorked} วัน
+                      </td>
                       <td className="py-2.5 px-3 text-center">
                         <span
                           className={
@@ -997,7 +1991,7 @@ export default function App() {
                               : 'text-slate-700'
                           }
                         >
-                          {item.totalLeaveDays} วัน
+                          {format2(item.totalLeaveDays)} วัน
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center">
@@ -1015,8 +2009,10 @@ export default function App() {
                       <td className="py-2.5 px-3 text-xs text-slate-600">
                         {item.isEligible ? (
                           <span className="text-emerald-700 font-medium">
-                            ผ่านเกณฑ์ครบทั้ง 3 ข้อ (เข้าไม่เกิน 08:00 น. ทุกวัน และลาไม่เกิน 1 วัน)
+                            ผ่านเกณฑ์ครบทั้ง 3 ข้อ (เข้าไม่เกิน 08:00 น. ทุกวัน และลาไม่เกิน 1.00 วัน)
                           </span>
+                        ) : reportMode === 'manager' ? (
+                          item.disqualifyReasons[0] || '-'
                         ) : (
                           item.disqualifyReasons.join(' • ')
                         )}
@@ -1038,7 +2034,7 @@ export default function App() {
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Clock className="w-5 h-5 text-amber-600" />
-                  รายงานที่ 2: สรุปการเข้างานสาย (จำนวนครั้งและจำนวนนาที) ประจำเดือน{' '}
+                  รายงานที่ 2: สรุปการเข้างานสาย (จำนวนคน จำนวนครั้ง และจำนวนนาที) ประจำเดือน{' '}
                   {formatYearMonthThai(selectedYearMonth)}
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
@@ -1046,7 +2042,9 @@ export default function App() {
                 </p>
               </div>
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 self-start sm:self-center">
-                รวมสาย {auditResult.activityGrandTotal.lateCount} ครั้ง ({auditResult.activityGrandTotal.lateMinutes} นาที)
+                มาสาย {latePeopleList.length} คน / รวม{' '}
+                {auditResult.activityGrandTotal.lateCount} ครั้ง (
+                {auditResult.activityGrandTotal.lateMinutes} นาที)
               </span>
             </div>
 
@@ -1055,12 +2053,22 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">
+                      ชื่อ-นามสกุล (ชื่อเล่น)
+                    </th>
                     <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">จำนวนครั้งที่สาย</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">รวมเวลาสาย (นาที)</th>
-                    <th className="py-2.5 px-3 font-semibold">รายละเอียดวันที่มาสายและเวลาสแกนเข้า</th>
+                    <th className="py-2.5 px-3 font-semibold text-center">
+                      จำนวนครั้งที่สาย
+                    </th>
+                    <th className="py-2.5 px-3 font-semibold text-center">
+                      รวมเวลาสาย (นาที)
+                    </th>
+                    {reportMode === 'hr_payroll' && (
+                      <th className="py-2.5 px-3 font-semibold">
+                        รายละเอียดวันที่มาสายและเวลาสแกนเข้า
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1080,7 +2088,9 @@ export default function App() {
                           ({item.nickname})
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-700">{item.position}</td>
+                      <td className="py-2.5 px-3 text-slate-700">
+                        {item.position}
+                      </td>
                       <td className="py-2.5 px-3">{item.department}</td>
                       <td className="py-2.5 px-3 text-center">
                         <span
@@ -1104,42 +2114,44 @@ export default function App() {
                           {item.lateMinutes} นาที
                         </span>
                       </td>
-                      <td className="py-2.5 px-3">
-                        {item.dailyDetails.length === 0 ? (
-                          <span className="text-xs text-emerald-700">
-                            ไม่มาสายในเดือนนี้
-                          </span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {item.dailyDetails.map((d) => (
-                              <span
-                                key={d.date}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-amber-200 text-xs text-slate-700"
-                              >
-                                <strong className="text-slate-900">
-                                  {formatDateDisplay(d.date)}
-                                </strong>
-                                <span>เข้า {d.scanIn}</span>
-                                <span className="text-rose-600 font-semibold">
-                                  (+{d.lateMinutes} น.)
-                                </span>
-                                {d.rule.includes('09:00') && (
-                                  <span className="text-[10px] bg-blue-50 text-blue-700 px-1 rounded">
-                                    เกณฑ์ 09:00
+                      {reportMode === 'hr_payroll' && (
+                        <td className="py-2.5 px-3">
+                          {item.dailyDetails.length === 0 ? (
+                            <span className="text-xs text-emerald-700">
+                              ไม่มาสายในเดือนนี้
+                            </span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {item.dailyDetails.map((d) => (
+                                <span
+                                  key={d.date}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-amber-200 text-xs text-slate-700"
+                                >
+                                  <strong className="text-slate-900">
+                                    {formatDateDisplay(d.date)}
+                                  </strong>
+                                  <span>เข้า {d.scanIn}</span>
+                                  <span className="text-rose-600 font-semibold">
+                                    (+{d.lateMinutes} น.)
                                   </span>
-                                )}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
+                                  {d.rule.includes('09:00') && (
+                                    <span className="text-[10px] bg-blue-50 text-blue-700 px-1 rounded">
+                                      เกณฑ์ 09:00
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
                     <td colSpan={4} className="py-2.5 px-3 text-right">
-                      รวมทั้งบริษัท (Grand Total):
+                      รวมทั้งบริษัท (Grand Total — ผู้มาสาย {latePeopleList.length} คน):
                     </td>
                     <td className="py-2.5 px-3 text-center text-amber-800">
                       {auditResult.activityGrandTotal.lateCount} ครั้ง
@@ -1147,10 +2159,12 @@ export default function App() {
                     <td className="py-2.5 px-3 text-center text-rose-700">
                       {auditResult.activityGrandTotal.lateMinutes} นาที
                     </td>
-                    <td className="py-2.5 px-3 text-xs font-normal text-slate-600">
-                      มีผู้มาสาย {latePeopleList.length} คน จากทั้งหมด{' '}
-                      {auditResult.lateSummaryReport.length} คน
-                    </td>
+                    {reportMode === 'hr_payroll' && (
+                      <td className="py-2.5 px-3 text-xs font-normal text-slate-600">
+                        มีผู้มาสาย {latePeopleList.length} คน จากทั้งหมด{' '}
+                        {auditResult.lateSummaryReport.length} คน
+                      </td>
+                    )}
                   </tr>
                 </tfoot>
               </table>
@@ -1159,7 +2173,7 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* REPORT 3: ใครลาไม่รับค่าจ้าง หรือ ลาอื่นๆ บ้าง กี่วัน กี่ชั่วโมง */}
+        {/* REPORT 3: ใครลาไม่รับค่าจ้าง หรือ ลาอื่นๆ บ้าง กี่วัน กี่ชั่วโมง (2 ตำแหน่ง) */}
         {/* ===================================================================== */}
         {(activeTab === 'overview' || activeTab === 'report3_unpaid') && (
           <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -1167,18 +2181,18 @@ export default function App() {
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-rose-600" />
-                  รายงานที่ 3: สรุปการลาไม่รับค่าจ้าง และ ลาอื่นๆ (จำนวนวันและชั่วโมง) ประจำเดือน{' '}
+                  รายงานที่ 3: สรุปการลาไม่รับค่าจ้าง และ ลาอื่นๆ (ทศนิยม 2 ตำแหน่ง) ประจำเดือน{' '}
                   {formatYearMonthThai(selectedYearMonth)}
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  คำนวณตามเกณฑ์ 8 ชั่วโมง = 1 วันทำงาน | แยกตรวจจับ &quot;ลาไม่รับค่าจ้าง&quot; จากประเภทการลา เหตุผลการลา และหมายเหตุอัตโนมัติ
+                  คำนวณตามเกณฑ์ 8 ชั่วโมง = 1.00 วันทำงาน | แสดงตัวเลขวันลาเป็น 2 ตำแหน่งและใช้สูตรจัดประเภทเดียวกับทุกรายงาน
                 </p>
               </div>
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 self-start sm:self-center">
-                ลาไม่รับค่าจ้าง {auditResult.activityGrandTotal.unpaidDays} วัน (
-                {auditResult.activityGrandTotal.unpaidHours} ชม.) | ลาอื่นๆ{' '}
-                {auditResult.activityGrandTotal.otherDays} วัน (
-                {auditResult.activityGrandTotal.otherHours} ชม.)
+                ลาไม่รับค่าจ้าง {format2(auditResult.activityGrandTotal.unpaidDays)} วัน (
+                {format2(auditResult.activityGrandTotal.unpaidHours)} ชม.) | ลาอื่นๆ{' '}
+                {format2(auditResult.activityGrandTotal.otherDays)} วัน (
+                {format2(auditResult.activityGrandTotal.otherHours)} ชม.)
               </span>
             </div>
 
@@ -1187,7 +2201,9 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">
+                      ชื่อ-นามสกุล (ชื่อเล่น)
+                    </th>
                     <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
                     <th className="py-2.5 px-3 font-semibold text-center bg-rose-50/60">
@@ -1199,9 +2215,11 @@ export default function App() {
                     <th className="py-2.5 px-3 font-semibold text-center">
                       รวมทั้ง 2 ประเภท
                     </th>
-                    <th className="py-2.5 px-3 font-semibold">
-                      รายละเอียดวันที่ใช้สิทธิและเหตุผล
-                    </th>
+                    {reportMode === 'hr_payroll' && (
+                      <th className="py-2.5 px-3 font-semibold">
+                        รายละเอียดวันที่ใช้สิทธิและเหตุผล
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1221,52 +2239,66 @@ export default function App() {
                           ({item.nickname})
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-700">{item.position}</td>
+                      <td className="py-2.5 px-3 text-slate-700">
+                        {item.position}
+                      </td>
                       <td className="py-2.5 px-3">{item.department}</td>
                       <td className="py-2.5 px-3 text-center">
                         {item.unpaidDays > 0 ? (
                           <span className="font-bold text-rose-700">
-                            {item.unpaidDays} วัน ({item.unpaidHours} ชม.)
+                            {format2(item.unpaidDays)} วัน (
+                            {format2(item.unpaidHours)} ชม.)
                           </span>
                         ) : (
-                          <span className="text-slate-400">0 วัน (0 ชม.)</span>
+                          <span className="text-slate-400">
+                            0.00 วัน (0.00 ชม.)
+                          </span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         {item.otherDays > 0 ? (
                           <span className="font-bold text-purple-700">
-                            {item.otherDays} วัน ({item.otherHours} ชม.)
+                            {format2(item.otherDays)} วัน (
+                            {format2(item.otherHours)} ชม.)
                           </span>
                         ) : (
-                          <span className="text-slate-400">0 วัน (0 ชม.)</span>
+                          <span className="text-slate-400">
+                            0.00 วัน (0.00 ชม.)
+                          </span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-center font-bold">
                         {item.totalDays > 0 ? (
                           <span className="text-slate-900">
-                            {item.totalDays} วัน ({item.totalHours} ชม.)
+                            {format2(item.totalDays)} วัน (
+                            {format2(item.totalHours)} ชม.)
                           </span>
                         ) : (
-                          <span className="text-slate-400">-</span>
+                          <span className="text-slate-400">0.00 วัน</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-xs text-slate-700">
-                        {item.details.length === 0 ? (
-                          <span className="text-slate-400">-</span>
-                        ) : (
-                          <div className="space-y-1">
-                            {item.details.map((d, i) => (
-                              <div key={`${d.date}-${i}`}>
-                                <span className="font-semibold">
-                                  {formatDateDisplay(d.date)}
-                                </span>
-                                : {d.type} {d.days} วัน ({d.hours} ชม.) —{' '}
-                                <span className="text-slate-600">{d.reason}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
+                      {reportMode === 'hr_payroll' && (
+                        <td className="py-2.5 px-3 text-xs text-slate-700">
+                          {item.details.length === 0 ? (
+                            <span className="text-slate-400">-</span>
+                          ) : (
+                            <div className="space-y-1">
+                              {item.details.map((d, i) => (
+                                <div key={`${d.date}-${i}`}>
+                                  <span className="font-semibold">
+                                    {formatDateDisplay(d.date)}
+                                  </span>
+                                  : {d.type} {format2(d.days)} วัน (
+                                  {format2(d.hours)} ชม.) —{' '}
+                                  <span className="text-slate-600">
+                                    {d.reason}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -1276,30 +2308,26 @@ export default function App() {
                       รวมทั้งสิ้น (Grand Total):
                     </td>
                     <td className="py-2.5 px-3 text-center text-rose-700">
-                      {auditResult.activityGrandTotal.unpaidDays} วัน (
-                      {auditResult.activityGrandTotal.unpaidHours} ชม.)
+                      {format2(auditResult.activityGrandTotal.unpaidDays)} วัน (
+                      {format2(auditResult.activityGrandTotal.unpaidHours)} ชม.)
                     </td>
                     <td className="py-2.5 px-3 text-center text-purple-700">
-                      {auditResult.activityGrandTotal.otherDays} วัน (
-                      {auditResult.activityGrandTotal.otherHours} ชม.)
+                      {format2(auditResult.activityGrandTotal.otherDays)} วัน (
+                      {format2(auditResult.activityGrandTotal.otherHours)} ชม.)
                     </td>
                     <td className="py-2.5 px-3 text-center">
-                      {Number(
-                        (
-                          auditResult.activityGrandTotal.unpaidDays +
+                      {format2(
+                        auditResult.activityGrandTotal.unpaidDays +
                           auditResult.activityGrandTotal.otherDays
-                        ).toFixed(4)
                       )}{' '}
                       วัน (
-                      {Number(
-                        (
-                          auditResult.activityGrandTotal.unpaidHours +
+                      {format2(
+                        auditResult.activityGrandTotal.unpaidHours +
                           auditResult.activityGrandTotal.otherHours
-                        ).toFixed(2)
                       )}{' '}
                       ชม.)
                     </td>
-                    <td></td>
+                    {reportMode === 'hr_payroll' && <td></td>}
                   </tr>
                 </tfoot>
               </table>
@@ -1308,128 +2336,239 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* REPORT 4: ใครใช้สิทธิการลาอะไรบ้างในเดือน ใช้ไปเมื่อไหร่ กี่วัน */}
+        {/* REPORT 4: ใครใช้สิทธิการลาอะไรบ้างในเดือน + ตรวจสอบวันลาข้ามเดือน/ล่วงหน้า */}
         {/* ===================================================================== */}
         {(activeTab === 'overview' || activeTab === 'report4_monthly_leave') && (
-          <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-indigo-600" />
-                  รายงานที่ 4: รายละเอียดการใช้สิทธิการลาในเดือน (ใช้สิทธิอะไร เมื่อไหร่ กี่วัน/ชั่วโมง) ประจำเดือน{' '}
-                  {formatYearMonthThai(selectedYearMonth)}
-                </h2>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  เชื่อมโยงข้อมูลจากไฟล์ &quot;แบบฟอร์มลาออนไลน์&quot; และคอลัมน์วันลาในชีตสแกนนิ้ว
-                </p>
+          <section className="space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-indigo-600" />
+                    รายงานที่ 4: รายละเอียดการใช้สิทธิการลาในเดือน และการตรวจสอบวันที่ข้ามเดือน ประจำเดือน{' '}
+                    {formatYearMonthThai(selectedYearMonth)}
+                  </h2>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    แปลงวันที่จากแบบฟอร์มลาออนไลน์ (คอลัมน์ I, J: DD/MM/YYYY) เทียบกับไฟล์สแกนนิ้ว (คอลัมน์ G: YYYY-MM-DD) และหักเฉพาะวันทำงานที่อยู่ในเดือนที่เลือก
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsAddLeaveModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer no-print"
+                >
+                  <Plus className="w-4 h-4" />
+                  บันทึกใบลาเพิ่ม
+                </button>
               </div>
-              <button
-                onClick={() => setIsAddLeaveModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer no-print"
-              >
-                <Plus className="w-4 h-4" />
-                บันทึกใบลาเพิ่ม
-              </button>
-            </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs sm:text-sm">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
-                    <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
-                    <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
-                    <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
-                    <th className="py-2.5 px-3 font-semibold">ประเภทสิทธิที่ใช้</th>
-                    <th className="py-2.5 px-3 font-semibold">วันที่ใช้สิทธิ (ตั้งแต่วันที่ - ถึงวันที่)</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">จำนวนวัน</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">จำนวนชั่วโมง</th>
-                    <th className="py-2.5 px-3 font-semibold">เหตุผลการลา / หมายเหตุ</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">แหล่งข้อมูล</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {auditResult.monthlyLeaveUsageReport.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={10}
-                        className="py-8 text-center text-slate-500"
-                      >
-                        ไม่มีรายการใช้สิทธิการลาในเดือนนี้
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                      <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        ชื่อ-นามสกุล (ชื่อเล่น)
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
+                      <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        ประเภทสิทธิที่ใช้
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        วันที่ใช้สิทธิ (ตั้งแต่วันที่ - ถึงวันที่)
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold text-center">
+                        จำนวนวัน (2 ตำแหน่ง)
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold text-center">
+                        จำนวนชั่วโมง
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        เหตุผลการลา
+                      </th>
+                      {reportMode === 'hr_payroll' && (
+                        <th className="py-2.5 px-3 font-semibold text-center">
+                          การตรวจสอบวันที่ / แหล่งข้อมูล
+                        </th>
+                      )}
                     </tr>
-                  ) : (
-                    auditResult.monthlyLeaveUsageReport.map((item, idx) => (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
-                        <td className="py-2.5 px-3 font-medium text-slate-900">
-                          {item.fullName}{' '}
-                          <span className="text-slate-500 font-normal">
-                            ({item.nickname})
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-700">
-                          {item.position}
-                        </td>
-                        <td className="py-2.5 px-3">{item.department}</td>
-                        <td className="py-2.5 px-3">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                              item.isUnpaid || item.leaveType === 'ลาไม่รับค่าจ้าง'
-                                ? 'bg-rose-100 text-rose-800'
-                                : item.leaveType === 'ลาป่วย'
-                                ? 'bg-blue-100 text-blue-800'
-                                : item.leaveType === 'ลากิจ'
-                                ? 'bg-amber-100 text-amber-800'
-                                : item.leaveType === 'ลาพักร้อน'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-purple-100 text-purple-800'
-                            }`}
-                          >
-                            {item.leaveType}
-                            {item.isUnpaid && item.leaveType !== 'ลาไม่รับค่าจ้าง'
-                              ? ' (ไม่รับค่าจ้าง)'
-                              : ''}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 font-medium">
-                          {item.startDate === item.endDate
-                            ? formatDateDisplay(item.startDate, true)
-                            : `${formatDateDisplay(item.startDate)} ถึง ${formatDateDisplay(item.endDate)}`}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-bold text-indigo-700">
-                          {item.days} วัน
-                        </td>
-                        <td className="py-2.5 px-3 text-center text-slate-700">
-                          {item.hours} ชม.
-                        </td>
-                        <td className="py-2.5 px-3 text-xs text-slate-700">
-                          {item.reason}
-                          {item.note ? ` (${item.note})` : ''}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className="px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-600">
-                            {item.source}
-                          </span>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {auditResult.monthlyLeaveUsageReport.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={reportMode === 'hr_payroll' ? 10 : 9}
+                          className="py-8 text-center text-slate-500"
+                        >
+                          ไม่มีรายการใช้สิทธิการลาในเดือนนี้
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      auditResult.monthlyLeaveUsageReport.map((item, idx) => (
+                        <tr key={item.id} className="hover:bg-slate-50">
+                          <td className="py-2.5 px-3 text-slate-500">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3 font-medium text-slate-900">
+                            {item.fullName}{' '}
+                            <span className="text-slate-500 font-normal">
+                              ({item.nickname})
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700">
+                            {item.position}
+                          </td>
+                          <td className="py-2.5 px-3">{item.department}</td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                item.isUnpaid ||
+                                item.leaveType === 'ลาไม่รับค่าจ้าง'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : item.leaveType === 'ลาป่วย'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : item.leaveType === 'ลากิจ'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : item.leaveType === 'ลาพักร้อน'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}
+                            >
+                              {item.leaveType}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-medium">
+                            {item.startDate === item.endDate
+                              ? formatDateDisplay(item.startDate, true)
+                              : `${formatDateDisplay(item.startDate)} ถึง ${formatDateDisplay(item.endDate)}`}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-bold text-indigo-700">
+                            {format2(item.days)} วัน
+                          </td>
+                          <td className="py-2.5 px-3 text-center text-slate-700">
+                            {format2(item.hours)} ชม.
+                          </td>
+                          <td className="py-2.5 px-3 text-xs text-slate-700">
+                            {item.reason}
+                          </td>
+                          {reportMode === 'hr_payroll' && (
+                            <td className="py-2.5 px-3 text-center space-y-1">
+                              {item.isCrossMonth ? (
+                                <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-900">
+                                  {item.dateValidationNote}
+                                </span>
+                              ) : (
+                                <span className="inline-block px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-700">
+                                  วันที่ตรงเดือน ({item.source})
+                                </span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
+                      <td colSpan={6} className="py-2.5 px-3 text-right">
+                        รวมการใช้สิทธิการลาในเดือนนี้ (ตรงกับรายงานที่ 5 ทุกประการ):
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-indigo-700">
+                        {format2(auditResult.activityGrandTotal.totalLeaveDays)}{' '}
+                        วัน
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-slate-800">
+                        {format2(
+                          auditResult.activityGrandTotal.totalLeaveHours
+                        )}{' '}
+                        ชม.
+                      </td>
+                      <td colSpan={reportMode === 'hr_payroll' ? 2 : 1}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
+
+            {/* PRIORITY 2: กล่องตรวจสอบใบลาข้ามเดือน หรือ ใบลายื่นล่วงหน้าในเดือนนี้แต่เป็นวันลาของเดือนอื่น */}
+            {reportMode === 'hr_payroll' &&
+              auditResult.crossMonthOrFutureLeaves.length > 0 && (
+                <div className="bg-amber-50/70 rounded-xl border border-amber-200 p-4 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-amber-950 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                        การตรวจสอบวันที่ข้ามเดือนและใบลาล่วงหน้าต่างเดือน (พบ{' '}
+                        {auditResult.crossMonthOrFutureLeaves.length} รายการ)
+                      </h3>
+                      <p className="text-xs text-amber-900/80 mt-0.5">
+                        รายการด้านล่างคือใบลาที่พนักงานยื่นในเดือน{' '}
+                        {selectedYearMonth} แต่มีวันลาอยู่ในเดือนถัดไป (เช่น เดือนพฤศจิกายน 2026-11) หรือลาคร่อมหลายเดือน ระบบแยกตัดเฉพาะวันทำงานที่อยู่ในเดือน{' '}
+                        {selectedYearMonth} เพื่อไม่ให้หักวันลาผิดเดือน
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto bg-white rounded-lg border border-amber-200">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-amber-100/60 text-amber-950 border-b border-amber-200">
+                          <th className="py-2 px-3 font-semibold">ชื่อพนักงาน</th>
+                          <th className="py-2 px-3 font-semibold">ประเภทการลา</th>
+                          <th className="py-2 px-3 font-semibold">
+                            ช่วงวันที่ลา (ตั้งแต่วันที่ - ถึงวันที่)
+                          </th>
+                          <th className="py-2 px-3 font-semibold text-center">
+                            วันลาทั้งหมดในใบลา
+                          </th>
+                          <th className="py-2 px-3 font-semibold text-center">
+                            หักในเดือน {selectedYearMonth}
+                          </th>
+                          <th className="py-2 px-3 font-semibold">
+                            ผลการตรวจสอบวันที่ข้ามเดือน / ล่วงหน้า
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-100">
+                        {auditResult.crossMonthOrFutureLeaves.map((c) => (
+                          <tr key={c.id}>
+                            <td className="py-2 px-3 font-semibold text-slate-900">
+                              {c.fullName} ({c.nickname}) — {c.position}
+                            </td>
+                            <td className="py-2 px-3">{c.leaveType}</td>
+                            <td className="py-2 px-3 font-mono">
+                              {formatDateDisplay(c.startDate)} ถึง{' '}
+                              {formatDateDisplay(c.endDate)}
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              {format2(c.totalRequestedDays ?? c.days)} วัน (
+                              {format2(c.totalRequestedHours ?? c.hours)} ชม.)
+                            </td>
+                            <td className="py-2 px-3 text-center font-bold text-indigo-700">
+                              {format2(c.days)} วัน ({format2(c.hours)} ชม.)
+                            </td>
+                            <td className="py-2 px-3 text-amber-900 font-medium">
+                              {c.dateValidationNote} — เหตุผล: {c.reason}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
           </section>
         )}
 
         {/* ===================================================================== */}
-        {/* REPORT 5: สรุปกิจกรรมการลาพนักงาน (ป่วย/กิจ/พักร้อน/อื่นๆ/สาย) รายคน + รวมทั้งบริษัท */}
+        {/* REPORT 5: สรุปกิจกรรมการลาพนักงาน (ป่วย/กิจ/พักร้อน/ไม่รับค่าจ้าง/อื่นๆ/สาย) 2 ตำแหน่ง */}
         {/* ===================================================================== */}
         {(activeTab === 'overview' || activeTab === 'report5_activity') && (
           <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
               <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
-                รายงานที่ 5: สรุปกิจกรรมการลาทุกประเภทและสถิติการมาสาย (รายบุคคล และ ยอดรวมทั้งบริษัท) ประจำเดือน{' '}
+                รายงานที่ 5: สรุปกิจกรรมการลาทุกประเภทและสถิติการมาสาย (แสดงทศนิยม 2 ตำแหน่งตรงกันทุกรายงาน) ประจำเดือน{' '}
                 {formatYearMonthThai(selectedYearMonth)}
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
@@ -1442,26 +2581,28 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-2.5 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">
+                      ชื่อ-นามสกุล (ชื่อเล่น)
+                    </th>
                     <th className="py-2.5 px-2.5 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-2.5 font-semibold">แผนก</th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-blue-50/60">
-                      ลาป่วย (วัน/ชม.)
+                      ลาป่วย (วัน)
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-amber-50/60">
-                      ลากิจ (วัน/ชม.)
+                      ลากิจ (วัน)
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-emerald-50/60">
-                      ลาพักร้อน (วัน/ชม.)
+                      ลาพักร้อน (วัน)
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-rose-50/60">
-                      ลาไม่รับค่าจ้าง (วัน/ชม.)
+                      ลาไม่รับค่าจ้าง (วัน)
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-purple-50/60">
-                      ลาอื่นๆ (วัน/ชม.)
+                      ลาอื่นๆ (วัน)
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-indigo-50/60">
-                      รวมวันลา (วัน/ชม.)
+                      รวมวันลา (วัน)
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold text-center">
                       สาย (ครั้ง)
@@ -1476,8 +2617,13 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {auditResult.activitySummaryReport.map((item, idx) => (
-                    <tr key={`${item.fullName}-${idx}`} className="hover:bg-slate-50">
-                      <td className="py-2.5 px-2.5 text-slate-500">{idx + 1}</td>
+                    <tr
+                      key={`${item.fullName}-${idx}`}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="py-2.5 px-2.5 text-slate-500">
+                        {idx + 1}
+                      </td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {item.fullName}{' '}
                         <span className="text-slate-500 font-normal">
@@ -1487,60 +2633,64 @@ export default function App() {
                       <td className="py-2.5 px-2.5 text-xs text-slate-700">
                         {item.position}
                       </td>
-                      <td className="py-2.5 px-2.5 text-xs">{item.department}</td>
+                      <td className="py-2.5 px-2.5 text-xs">
+                        {item.department}
+                      </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.sickDays > 0 ? (
                           <span className="font-semibold text-blue-700">
-                            {item.sickDays} ({item.sickHours}ชม.)
+                            {format2(item.sickDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0</span>
+                          <span className="text-slate-400">0.00</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.personalDays > 0 ? (
                           <span className="font-semibold text-amber-700">
-                            {item.personalDays} ({item.personalHours}ชม.)
+                            {format2(item.personalDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0</span>
+                          <span className="text-slate-400">0.00</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.vacationDays > 0 ? (
                           <span className="font-semibold text-emerald-700">
-                            {item.vacationDays} ({item.vacationHours}ชม.)
+                            {format2(item.vacationDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0</span>
+                          <span className="text-slate-400">0.00</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.unpaidDays > 0 ? (
                           <span className="font-semibold text-rose-700">
-                            {item.unpaidDays} ({item.unpaidHours}ชม.)
+                            {format2(item.unpaidDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0</span>
+                          <span className="text-slate-400">0.00</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center">
                         {item.otherDays > 0 ? (
                           <span className="font-semibold text-purple-700">
-                            {item.otherDays} ({item.otherHours}ชม.)
+                            {format2(item.otherDays)}
                           </span>
                         ) : (
-                          <span className="text-slate-400">0</span>
+                          <span className="text-slate-400">0.00</span>
                         )}
                       </td>
                       <td className="py-2.5 px-2.5 text-center font-bold bg-indigo-50/30">
-                        {item.totalLeaveDays > 0 ? (
-                          <span className="text-indigo-900">
-                            {item.totalLeaveDays} วัน ({item.totalLeaveHours}ชม.)
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">0</span>
-                        )}
+                        <span
+                          className={
+                            item.totalLeaveDays > 0
+                              ? 'text-indigo-900'
+                              : 'text-slate-400'
+                          }
+                        >
+                          {format2(item.totalLeaveDays)}
+                        </span>
                       </td>
                       <td className="py-2.5 px-2.5 text-center font-semibold">
                         <span
@@ -1570,7 +2720,7 @@ export default function App() {
                             ได้รับ
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400">-</span>
+                          <span className="text-xs text-slate-400">ไม่ได้รับ</span>
                         )}
                       </td>
                     </tr>
@@ -1582,28 +2732,23 @@ export default function App() {
                       รวมทั้งบริษัท (Grand Total):
                     </td>
                     <td className="py-3 px-2.5 text-center text-sky-200">
-                      {auditResult.activityGrandTotal.sickDays} วัน (
-                      {auditResult.activityGrandTotal.sickHours}ชม.)
+                      {format2(auditResult.activityGrandTotal.sickDays)} วัน
                     </td>
                     <td className="py-3 px-2.5 text-center text-amber-200">
-                      {auditResult.activityGrandTotal.personalDays} วัน (
-                      {auditResult.activityGrandTotal.personalHours}ชม.)
+                      {format2(auditResult.activityGrandTotal.personalDays)} วัน
                     </td>
                     <td className="py-3 px-2.5 text-center text-emerald-200">
-                      {auditResult.activityGrandTotal.vacationDays} วัน (
-                      {auditResult.activityGrandTotal.vacationHours}ชม.)
+                      {format2(auditResult.activityGrandTotal.vacationDays)} วัน
                     </td>
                     <td className="py-3 px-2.5 text-center text-rose-200">
-                      {auditResult.activityGrandTotal.unpaidDays} วัน (
-                      {auditResult.activityGrandTotal.unpaidHours}ชม.)
+                      {format2(auditResult.activityGrandTotal.unpaidDays)} วัน
                     </td>
                     <td className="py-3 px-2.5 text-center text-purple-200">
-                      {auditResult.activityGrandTotal.otherDays} วัน (
-                      {auditResult.activityGrandTotal.otherHours}ชม.)
+                      {format2(auditResult.activityGrandTotal.otherDays)} วัน
                     </td>
                     <td className="py-3 px-2.5 text-center bg-indigo-900 text-white">
-                      {auditResult.activityGrandTotal.totalLeaveDays} วัน (
-                      {auditResult.activityGrandTotal.totalLeaveHours}ชม.)
+                      {format2(auditResult.activityGrandTotal.totalLeaveDays)}{' '}
+                      วัน
                     </td>
                     <td className="py-3 px-2.5 text-center text-amber-300">
                       {auditResult.activityGrandTotal.lateCount} ครั้ง
@@ -1622,14 +2767,14 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* REPORT 6: สิทธิคงเหลือแต่ละบุคคล */}
+        {/* REPORT 6: สิทธิคงเหลือแต่ละบุคคล (แสดงทศนิยม 2 ตำแหน่ง) */}
         {/* ===================================================================== */}
         {(activeTab === 'overview' || activeTab === 'report6_quota') && (
           <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
               <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                 <UserCheck className="w-5 h-5 text-emerald-600" />
-                รายงานที่ 6: สรุปสิทธิวันลาคงเหลือรายบุคคล (อ้างอิงจากชีต &quot;สิทธิคงเหลือ&quot; เป็นหลัก)
+                รายงานที่ 6: สรุปสิทธิวันลาคงเหลือรายบุคคล (แสดงทศนิยม 2 ตำแหน่งมาตรฐานเดียวกัน)
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
                 แสดงโควตาวันลาที่ได้ทั้งหมด วันลาที่ใช้ไปสะสม และวันลาคงเหลือของพนักงานแต่ละคน
@@ -1678,22 +2823,36 @@ export default function App() {
                     </th>
                   </tr>
                   <tr className="bg-slate-50 text-[11px] text-slate-600 border-b border-slate-200">
-                    <th className="py-1.5 px-2 text-center bg-blue-50/50">สิทธิ์</th>
-                    <th className="py-1.5 px-2 text-center bg-blue-50/50">ใช้สะสม</th>
+                    <th className="py-1.5 px-2 text-center bg-blue-50/50">
+                      สิทธิ์
+                    </th>
+                    <th className="py-1.5 px-2 text-center bg-blue-50/50">
+                      ใช้สะสม
+                    </th>
                     <th className="py-1.5 px-2 text-center font-bold text-blue-900 bg-blue-100/60">
                       คงเหลือ
                     </th>
-                    <th className="py-1.5 px-2 text-center bg-amber-50/50">สิทธิ์</th>
-                    <th className="py-1.5 px-2 text-center bg-amber-50/50">ใช้สะสม</th>
+                    <th className="py-1.5 px-2 text-center bg-amber-50/50">
+                      สิทธิ์
+                    </th>
+                    <th className="py-1.5 px-2 text-center bg-amber-50/50">
+                      ใช้สะสม
+                    </th>
                     <th className="py-1.5 px-2 text-center font-bold text-amber-900 bg-amber-100/60">
                       คงเหลือ
                     </th>
-                    <th className="py-1.5 px-2 text-center bg-emerald-50/50">สิทธิ์</th>
-                    <th className="py-1.5 px-2 text-center bg-emerald-50/50">ใช้สะสม</th>
+                    <th className="py-1.5 px-2 text-center bg-emerald-50/50">
+                      สิทธิ์
+                    </th>
+                    <th className="py-1.5 px-2 text-center bg-emerald-50/50">
+                      ใช้สะสม
+                    </th>
                     <th className="py-1.5 px-2 text-center font-bold text-emerald-900 bg-emerald-100/60">
                       คงเหลือ
                     </th>
-                    <th className="py-1.5 px-2 text-center bg-purple-50/50">สิทธิ์</th>
+                    <th className="py-1.5 px-2 text-center bg-purple-50/50">
+                      สิทธิ์
+                    </th>
                     <th className="py-1.5 px-2 text-center font-bold text-purple-900 bg-purple-100/60">
                       คงเหลือ
                     </th>
@@ -1701,8 +2860,13 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {auditResult.quotaReport.map((q, idx) => (
-                    <tr key={`${q.fullName}-${idx}`} className="hover:bg-slate-50">
-                      <td className="py-2.5 px-2.5 text-slate-500">{idx + 1}</td>
+                    <tr
+                      key={`${q.fullName}-${idx}`}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="py-2.5 px-2.5 text-slate-500">
+                        {idx + 1}
+                      </td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {q.fullName}{' '}
                         <span className="text-slate-500 font-normal">
@@ -1715,40 +2879,40 @@ export default function App() {
                       <td className="py-2.5 px-2.5 text-xs">{q.department}</td>
                       {/* ลาป่วย */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {q.sickQuota}
+                        {format2(q.sickQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {q.sickUsedTotal}
+                        {format2(q.sickUsedTotal)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-blue-800 bg-blue-50/40">
-                        {q.sickRemaining}
+                        {format2(q.sickRemaining)}
                       </td>
                       {/* ลากิจ */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {q.personalQuota}
+                        {format2(q.personalQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {q.personalUsedTotal}
+                        {format2(q.personalUsedTotal)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-amber-800 bg-amber-50/40">
-                        {q.personalRemaining}
+                        {format2(q.personalRemaining)}
                       </td>
                       {/* ลาพักร้อน */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {q.vacationQuota}
+                        {format2(q.vacationQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {q.vacationUsedTotal}
+                        {format2(q.vacationUsedTotal)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-emerald-800 bg-emerald-50/40">
-                        {q.vacationRemaining}
+                        {format2(q.vacationRemaining)}
                       </td>
                       {/* ลาอื่นๆ */}
                       <td className="py-2.5 px-2 text-center text-slate-600">
-                        {q.otherQuota}
+                        {format2(q.otherQuota)}
                       </td>
                       <td className="py-2.5 px-2 text-center font-bold text-purple-800 bg-purple-50/40">
-                        {q.otherRemaining}
+                        {format2(q.otherRemaining)}
                       </td>
                     </tr>
                   ))}
@@ -1759,204 +2923,327 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* TAB 7: ตรวจสอบสแกนนิ้วรายวัน & แก้ไข/ใส่หมายเหตุ (HR Override) */}
+        {/* TAB: สแกนต้นฉบับ & หมายเหตุ & ประวัติการแก้ไข (สำหรับ HR/Payroll) */}
         {/* ===================================================================== */}
         {activeTab === 'daily_audit' && (
-          <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Edit3 className="w-5 h-5 text-indigo-600" />
-                  ตรวจสอบการสแกนนิ้วรายวัน กฎฝ่ายขาย และเมนู &quot;แก้ไข/ใส่หมายเหตุ&quot; สำหรับ HR
-                </h2>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  ข้อมูลสแกนนิ้วต้นฉบับจะถูกเก็บรักษาไว้เสมอ การแก้ไขหรือใส่หมายเหตุของ HR จะถูกบันทึกแยกในชั้น Override
-                </p>
+          <div className="space-y-6">
+            {/* ส่วนที่ 1: ประวัติการแก้ไขข้อมูลของ HR (Audit Log / Edit History) */}
+            <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="px-5 py-4 bg-indigo-50/70 border-b border-indigo-200 flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <History className="w-5 h-5 text-indigo-600" />
+                    ประวัติการแก้ไขข้อมูลและหมายเหตุโดย HR (Audit Log) —{' '}
+                    {overrideHistoryList.length} รายการ
+                  </h2>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    บันทึกทุกการแก้ไขเปรียบเทียบกับข้อมูลสแกนนิ้วต้นฉบับ เพื่อความโปร่งใสในการตรวจสอบเงินเดือน (Payroll Audit)
+                  </p>
+                </div>
+                {overrideHistoryList.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      setHrOverrides({});
+                      await triggerSaveState(
+                        employeeMappings,
+                        quotaRecords,
+                        leaveRecords,
+                        {},
+                        settings
+                      );
+                    }}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-semibold cursor-pointer no-print"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    ล้างประวัติการแก้ไขทั้งหมดกลับเป็นค่าต้นฉบับ
+                  </button>
+                )}
               </div>
 
-              {/* ตัวกรอง */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
-                  <input
-                    type="text"
-                    placeholder="ค้นหาชื่อ, ตำแหน่ง, วันที่, หมายเหตุ..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-8 pr-3 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500"
-                  />
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                      <th className="py-2 px-3 font-semibold">ลำดับ</th>
+                      <th className="py-2 px-3 font-semibold">วันที่รายการ</th>
+                      <th className="py-2 px-3 font-semibold">ชื่อพนักงาน</th>
+                      <th className="py-2 px-3 font-semibold">
+                        ค่าก่อนแก้ไข (สแกนนิ้วต้นฉบับ)
+                      </th>
+                      <th className="py-2 px-3 font-semibold">
+                        ค่าที่ปรับแก้ (เวลา / สถานะ / สาย)
+                      </th>
+                      <th className="py-2 px-3 font-semibold">หมายเหตุ HR</th>
+                      <th className="py-2 px-3 font-semibold">
+                        วันเวลาที่บันทึก
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {overrideHistoryList.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="py-6 text-center text-slate-500"
+                        >
+                          ยังไม่มีการแก้ไขข้อมูลโดย HR (แสดงผลตามข้อมูลสแกนนิ้วต้นฉบับ 100%)
+                        </td>
+                      </tr>
+                    ) : (
+                      overrideHistoryList.map((ov, idx) => (
+                        <tr key={ov.key} className="hover:bg-slate-50">
+                          <td className="py-2 px-3 text-slate-500">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2 px-3 font-mono font-medium">
+                            {formatDateDisplay(ov.date)}
+                          </td>
+                          <td className="py-2 px-3 font-semibold text-slate-900">
+                            {ov.employeeName || '-'}
+                          </td>
+                          <td className="py-2 px-3 text-slate-600">
+                            {ov.previousSummary || 'ตามข้อมูลสแกนนิ้วต้นฉบับ'}
+                          </td>
+                          <td className="py-2 px-3 font-medium text-indigo-800">
+                            {ov.overrideStatus
+                              ? `สถานะ: ${ov.overrideStatus}`
+                              : ''}{' '}
+                            {ov.overrideScanIn
+                              ? `| เข้า: ${ov.overrideScanIn}`
+                              : ''}{' '}
+                            {ov.overrideScanOut
+                              ? `| ออก: ${ov.overrideScanOut}`
+                              : ''}{' '}
+                            {ov.overrideLateCount !== undefined &&
+                            ov.overrideLateCount !== null
+                              ? `| สาย: ${ov.overrideLateCount} ครั้ง (${ov.overrideLateMinutes ?? 0} นาที)`
+                              : ''}
+                          </td>
+                          <td className="py-2 px-3 text-emerald-800 font-semibold">
+                            {ov.hrNote || '-'}
+                          </td>
+                          <td className="py-2 px-3 text-slate-500">
+                            {ov.updatedAt}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* ส่วนที่ 2: ตารางสแกนนิ้วต้นฉบับรายวันทั้งหมด */}
+            <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Edit3 className="w-5 h-5 text-indigo-600" />
+                    ตารางตรวจสอบการสแกนนิ้วรายวันทั้งหมด (สแกนต้นฉบับ เวลาที่ใช้คำนวณ และหมายเหตุ)
+                  </h2>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    ข้อมูลสแกนนิ้วต้นฉบับจะถูกเก็บรักษาไว้เสมอ การแก้ไขหรือใส่หมายเหตุของ HR จะถูกบันทึกแยกในชั้น Override
+                  </p>
                 </div>
 
-                <select
-                  value={dailyFilterEmp}
-                  onChange={(e) => setDailyFilterEmp(e.target.value)}
-                  className="px-2.5 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
-                >
-                  <option value="ALL">พนักงานทุกคน</option>
-                  {auditResult.activitySummaryReport.map((emp) => (
-                    <option key={emp.empCode} value={emp.empCode}>
-                      {emp.fullName} ({emp.nickname})
+                {/* ตัวกรอง */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="ค้นหาชื่อ, ตำแหน่ง, วันที่, หมายเหตุ..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <select
+                    value={dailyFilterEmp}
+                    onChange={(e) => setDailyFilterEmp(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
+                  >
+                    <option value="ALL">พนักงานทุกคน</option>
+                    {auditResult.activitySummaryReport.map((emp) => (
+                      <option key={emp.empCode} value={emp.empCode}>
+                        {emp.fullName} ({emp.nickname})
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={dailyFilterStatus}
+                    onChange={(e) => setDailyFilterStatus(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
+                  >
+                    <option value="ALL">
+                      ทุกสถานะ ({auditResult.dailyRecords.length})
                     </option>
-                  ))}
-                </select>
-
-                <select
-                  value={dailyFilterStatus}
-                  onChange={(e) => setDailyFilterStatus(e.target.value)}
-                  className="px-2.5 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
-                >
-                  <option value="ALL">ทุกสถานะ ({auditResult.dailyRecords.length})</option>
-                  <option value="ANOMALY">
-                    เฉพาะแจ้งเตือนสแกนไม่ครบ / พบลูกค้า ({auditResult.scanAnomalyRecords.length})
-                  </option>
-                  <option value="LATE">เฉพาะวันที่มาสาย</option>
-                  <option value="SALES_VISIT">
-                    เฉพาะฝ่ายขาย: คาดว่าไปพบลูกค้า & วันถัดไป (09:00)
-                  </option>
-                  <option value="OVERRIDDEN">เฉพาะรายการที่ HR แก้ไข/ใส่หมายเหตุ</option>
-                </select>
+                    <option value="ANOMALY">
+                      เฉพาะรายการผิดปกติ HR Exception (
+                      {auditResult.scanAnomalyRecords.length})
+                    </option>
+                    <option value="LATE">เฉพาะวันที่มาสาย</option>
+                    <option value="SALES_VISIT">
+                      เฉพาะฝ่ายขาย: คาดว่าไปพบลูกค้า & วันถัดไป (09:00)
+                    </option>
+                    <option value="OVERRIDDEN">
+                      เฉพาะรายการที่ HR แก้ไข/ใส่หมายเหตุ
+                    </option>
+                  </select>
+                </div>
               </div>
-            </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
-                    <th className="py-2.5 px-3 font-semibold">วันที่</th>
-                    <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
-                    <th className="py-2.5 px-2.5 font-semibold">ตำแหน่ง / แผนก</th>
-                    <th className="py-2.5 px-2.5 font-semibold text-center">
-                      สแกนต้นฉบับ (เข้า - ออก)
-                    </th>
-                    <th className="py-2.5 px-2.5 font-semibold text-center">
-                      เวลาที่ใช้คำนวณ
-                    </th>
-                    <th className="py-2.5 px-2.5 font-semibold text-center">
-                      เกณฑ์เวลาสาย
-                    </th>
-                    <th className="py-2.5 px-2.5 font-semibold text-center">
-                      สาย (นาที)
-                    </th>
-                    <th className="py-2.5 px-3 font-semibold">
-                      สถานะสแกนนิ้ว / กฎฝ่ายขาย
-                    </th>
-                    <th className="py-2.5 px-3 font-semibold">
-                      ข้อมูลการลา / หมายเหตุ HR
-                    </th>
-                    <th className="py-2.5 px-3 font-semibold text-center no-print">
-                      จัดการ
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {filteredDailyRecords.map((r) => (
-                    <tr
-                      key={r.key}
-                      className={
-                        r.hasHROverride
-                          ? 'bg-indigo-50/40 hover:bg-indigo-50/70'
-                          : r.scanStatus === 'ไม่พบสแกนเข้า-ออกและไม่มีใบลา'
-                          ? 'bg-rose-50/40 hover:bg-rose-50/70'
-                          : r.salesStatus === 'คาดว่าไปพบลูกค้า'
-                          ? 'bg-sky-50/40 hover:bg-sky-50/70'
-                          : 'hover:bg-slate-50'
-                      }
-                    >
-                      <td className="py-2.5 px-3 font-medium whitespace-nowrap">
-                        {formatDateDisplay(r.date)}{' '}
-                        <span className="text-slate-500">({r.dayOfWeek})</span>
-                      </td>
-                      <td className="py-2.5 px-3 font-medium text-slate-900">
-                        {r.fullName}{' '}
-                        <span className="text-slate-500">({r.nickname})</span>
-                      </td>
-                      <td className="py-2.5 px-2.5">
-                        <div className="font-medium text-slate-800">{r.position}</div>
-                        <div className="text-slate-500 text-[11px]">{r.department}</div>
-                      </td>
-                      <td className="py-2.5 px-2.5 text-center font-mono text-slate-600">
-                        {r.originalScanIn} - {r.originalScanOut}
-                      </td>
-                      <td className="py-2.5 px-2.5 text-center font-mono font-semibold text-slate-900">
-                        {r.effectiveScanIn} - {r.effectiveScanOut}
-                      </td>
-                      <td className="py-2.5 px-2.5 text-center">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] font-medium ${
-                            r.lateRuleApplied.includes('09:00')
-                              ? 'bg-sky-100 text-sky-800 font-semibold'
-                              : r.lateRuleApplied.includes('เสียเบี้ยขยัน')
-                              ? 'bg-amber-50 text-amber-700'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {r.lateRuleApplied}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-2.5 text-center">
-                        {r.lateCount > 0 ? (
-                          <span className="font-bold text-rose-600">
-                            {r.lateMinutes} นาที
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                            r.scanStatus === 'ครบปกติ'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : r.scanStatus === 'ลาเต็มวัน/มีข้อมูลการลา'
-                              ? 'bg-indigo-100 text-indigo-800'
-                              : r.scanStatus === 'คาดว่าไปพบลูกค้า'
-                              ? 'bg-sky-100 text-sky-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {r.alertMessage || r.scanStatus}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 space-y-0.5">
-                        {r.leaveDetails.length > 0 && (
-                          <div className="text-indigo-700 font-medium">
-                            {r.leaveDetails.join(', ')}
-                          </div>
-                        )}
-                        {r.sheetNote && (
-                          <div className="text-slate-500">
-                            ชีตเดิม: {r.sheetNote}
-                          </div>
-                        )}
-                        {r.hrNote && (
-                          <div className="text-emerald-700 font-semibold">
-                            หมายเหตุ HR: {r.hrNote}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3 text-center no-print">
-                        <button
-                          onClick={() => handleOpenEditDaily(r)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium transition cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          แก้ไข/หมายเหตุ
-                        </button>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                      <th className="py-2.5 px-3 font-semibold">วันที่</th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        ชื่อ-นามสกุล (ชื่อเล่น)
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold">
+                        ตำแหน่ง / แผนก
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold text-center">
+                        สแกนต้นฉบับ (เข้า - ออก)
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold text-center">
+                        เวลาที่ใช้คำนวณ
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold text-center">
+                        เกณฑ์เวลาสาย
+                      </th>
+                      <th className="py-2.5 px-2.5 font-semibold text-center">
+                        สาย (นาที)
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        สถานะสแกนนิ้ว / กฎฝ่ายขาย
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold">
+                        ข้อมูลการลา (2 ตำแหน่ง) / หมายเหตุ HR
+                      </th>
+                      <th className="py-2.5 px-3 font-semibold text-center no-print">
+                        จัดการ
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredDailyRecords.map((r) => (
+                      <tr
+                        key={r.key}
+                        className={
+                          r.hasHROverride
+                            ? 'bg-indigo-50/40 hover:bg-indigo-50/70'
+                            : r.scanStatus === 'ไม่พบสแกนเข้า-ออกและไม่มีใบลา'
+                            ? 'bg-rose-50/40 hover:bg-rose-50/70'
+                            : r.salesStatus === 'คาดว่าไปพบลูกค้า'
+                            ? 'bg-sky-50/40 hover:bg-sky-50/70'
+                            : 'hover:bg-slate-50'
+                        }
+                      >
+                        <td className="py-2.5 px-3 font-medium whitespace-nowrap">
+                          {formatDateDisplay(r.date)}{' '}
+                          <span className="text-slate-500">
+                            ({r.dayOfWeek})
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 font-medium text-slate-900">
+                          {r.fullName}{' '}
+                          <span className="text-slate-500">({r.nickname})</span>
+                        </td>
+                        <td className="py-2.5 px-2.5">
+                          <div className="font-medium text-slate-800">
+                            {r.position}
+                          </div>
+                          <div className="text-slate-500 text-[11px]">
+                            {r.department}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center font-mono text-slate-600">
+                          {r.originalScanIn} - {r.originalScanOut}
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center font-mono font-semibold text-slate-900">
+                          {r.effectiveScanIn} - {r.effectiveScanOut}
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                              r.lateRuleApplied.includes('09:00')
+                                ? 'bg-sky-100 text-sky-800 font-semibold'
+                                : r.lateRuleApplied.includes('เสียเบี้ยขยัน')
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {r.lateRuleApplied}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-2.5 text-center">
+                          {r.lateCount > 0 ? (
+                            <span className="font-bold text-rose-600">
+                              {r.lateMinutes} นาที
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                              r.scanStatus === 'ครบปกติ'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : r.scanStatus === 'ลาเต็มวัน/มีข้อมูลการลา'
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : r.scanStatus === 'คาดว่าไปพบลูกค้า'
+                                ? 'bg-sky-100 text-sky-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {r.alertMessage || r.scanStatus}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 space-y-0.5">
+                          {r.leaveDetails.length > 0 && (
+                            <div className="text-indigo-700 font-medium">
+                              {r.leaveDetails.join(', ')}
+                            </div>
+                          )}
+                          {r.sheetNote && (
+                            <div className="text-slate-500">
+                              ชีตเดิม: {r.sheetNote}
+                            </div>
+                          )}
+                          {r.hrNote && (
+                            <div className="text-emerald-700 font-semibold">
+                              หมายเหตุ HR: {r.hrNote}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-center no-print">
+                          <button
+                            onClick={() => handleOpenEditDaily(r)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium transition cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            แก้ไข/หมายเหตุ
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
         )}
 
         {/* ===================================================================== */}
-        {/* TAB 8: รายชื่อพนักงาน & กฎการมาทำงานบริษัท */}
+        {/* TAB: รายชื่อพนักงาน & กฎการมาทำงานบริษัท */}
         {/* ===================================================================== */}
         {activeTab === 'company_rules' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* รายชื่อพนักงานและสิทธิ์เบี้ยขยันตามตำแหน่ง */}
             <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
               <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
                 <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -1976,7 +3263,9 @@ export default function App() {
                       <th className="py-2.5 px-3">ชื่อ-นามสกุล (ชื่อเล่น)</th>
                       <th className="py-2.5 px-3">ตำแหน่ง</th>
                       <th className="py-2.5 px-3">แผนก/ฝ่าย</th>
-                      <th className="py-2.5 px-3 text-center">สิทธิ์เบี้ยขยันตามตำแหน่ง</th>
+                      <th className="py-2.5 px-3 text-center">
+                        สิทธิ์เบี้ยขยันตามตำแหน่ง
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -1985,8 +3274,13 @@ export default function App() {
                         (m.position || '').includes('เจ้าหน้าที่ฝ่ายขาย') ||
                         (m.position || '').includes('เจ้าหน้าที่ขาย');
                       return (
-                        <tr key={`${m.fullName}-${idx}`} className="hover:bg-slate-50">
-                          <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
+                        <tr
+                          key={`${m.fullName}-${idx}`}
+                          className="hover:bg-slate-50"
+                        >
+                          <td className="py-2.5 px-3 text-slate-500">
+                            {idx + 1}
+                          </td>
                           <td className="py-2.5 px-3 font-medium text-slate-900">
                             {m.fullName}{' '}
                             <span className="text-slate-500 font-normal">
@@ -2016,7 +3310,6 @@ export default function App() {
               </div>
             </section>
 
-            {/* กฎการมาทำงานบริษัท Attendance_Audit_Business_Rules_JCW */}
             <section className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-200 pb-3">
                 <FileText className="w-5 h-5 text-emerald-600" />
@@ -2054,7 +3347,7 @@ export default function App() {
                       ข้อ 2: ทุกวันทำงานที่มีการมาทำงาน ต้องมีเวลาสแกนเข้า <strong>&le; 08:00 น.</strong>
                     </li>
                     <li>
-                      ข้อ 3: วันลารวมทุกประเภทในเดือนนั้น <strong>&le; 1.0 วัน</strong> (เช่น ลา 0.5 + 0.5 = 1.0 วัน ยังได้เบี้ยขยัน)
+                      ข้อ 3: วันลารวมทุกประเภทในเดือนนั้น <strong>&le; 1.00 วัน</strong> (เช่น ลา 0.50 + 0.50 = 1.00 วัน ยังได้เบี้ยขยัน)
                     </li>
                   </ul>
                 </div>
@@ -2077,12 +3370,14 @@ export default function App() {
 
                 <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-200">
                   <h3 className="font-bold text-amber-950">
-                    4. การแปลงชั่วโมงการลาและรูปแบบวันที่ระหว่างไฟล์
+                    4. มาตรฐานการปัดเศษและการตรวจสอบวันที่ข้ามเดือน
                   </h3>
                   <ul className="list-disc list-inside mt-1 space-y-1 text-xs text-amber-900">
-                    <li>อัตราแปลงชั่วโมงลา: <strong>8 ชั่วโมง = 1 วันทำงาน</strong> (4 ชม. = 0.5 วัน, 2 ชม. = 0.25 วัน)</li>
                     <li>
-                      <strong>การเชื่อมข้อมูลอัตโนมัติ:</strong> ระบบใช้ ID บุคคลและรหัสพนักงานเชื่อมข้อมูลเบื้องหลังให้อัตโนมัติโดยไม่แสดงรหัสรกหน้าจอรายงาน
+                      อัตราแปลงชั่วโมงลา: <strong>8 ชั่วโมง = 1.00 วันทำงาน</strong> (แสดงผลทศนิยม 2 ตำแหน่ง และปัดเศษแบบเดียวกันทุกรายงาน)
+                    </li>
+                    <li>
+                      ระบบแยกตรวจจับวันที่จากไฟล์สแกนนิ้ว (YYYY-MM-DD) และไฟล์ฟอร์มลาออนไลน์ (DD/MM/YYYY) พร้อมแยกสัดส่วนวันลาข้ามเดือนและใบลาล่วงหน้าอัตโนมัติ
                     </li>
                   </ul>
                 </div>
@@ -2093,7 +3388,160 @@ export default function App() {
       </main>
 
       {/* ===================================================================== */}
-      {/* MODAL 1: แก้ไข / ใส่หมายเหตุรายวันสำหรับ HR (Override) */}
+      {/* MODAL 0: แสดงผลกระทบก่อนบันทึกการแก้ไขแบบกลุ่ม (Bulk Edit Impact Preview) */}
+      {/* ===================================================================== */}
+      {isBulkPreviewOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
+                  Impact Simulation Preview
+                </span>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 mt-1">
+                  ตรวจสอบผลกระทบต่อรายงานเงินเดือนก่อนบันทึกจริง (เลือกแก้ไข{' '}
+                  {selectedKeys.length} รายการ)
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsBulkPreviewOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* สรุปเปรียบเทียบ ก่อนแก้ -> หลังแก้ */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200">
+                <div className="font-semibold text-rose-900">
+                  1. รายการผิดปกติ (HR Exception)
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span className="text-slate-500 line-through">
+                    {auditResult.scanAnomalyRecords.length} รายการ
+                  </span>
+                  <span className="text-lg font-extrabold text-emerald-700">
+                    → เหลือ {previewAuditResult.scanAnomalyRecords.length} รายการ
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-600 mt-1">
+                  ลดลง{' '}
+                  {auditResult.scanAnomalyRecords.length -
+                    previewAuditResult.scanAnomalyRecords.length}{' '}
+                  รายการ
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                <div className="font-semibold text-amber-900">
+                  2. สถิติการมาสายรวมทั้งบริษัท
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span className="text-slate-500">
+                    {auditResult.activityGrandTotal.lateCount} ครั้ง (
+                    {auditResult.activityGrandTotal.lateMinutes} นาที)
+                  </span>
+                  <span className="text-base font-extrabold text-amber-900">
+                    → {previewAuditResult.activityGrandTotal.lateCount} ครั้ง (
+                    {previewAuditResult.activityGrandTotal.lateMinutes} นาที)
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div className="font-semibold text-emerald-900">
+                  3. ผู้ได้รับเบี้ยขยันประจำเดือน
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span className="text-slate-500">
+                    เดิม { auditResult.activityGrandTotal.diligenceEligibleCount } คน
+                  </span>
+                  <span className="text-lg font-extrabold text-emerald-700">
+                    → ใหม่{' '}
+                    {previewAuditResult.activityGrandTotal.diligenceEligibleCount}{' '}
+                    คน
+                  </span>
+                </div>
+                <div className="text-[11px] text-emerald-800 mt-1 truncate">
+                  ได้แก่:{' '}
+                  {previewAuditResult.diligenceReport
+                    .filter((d) => d.isEligible)
+                    .map((d) => d.nickname)
+                    .join(', ') || '-'}
+                </div>
+              </div>
+            </div>
+
+            {/* ตารางเปรียบเทียบรายการที่กำลังจะถูกบันทึก */}
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 bg-slate-100 text-slate-700 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2 px-3 font-semibold">วันที่</th>
+                    <th className="py-2 px-3 font-semibold">พนักงาน</th>
+                    <th className="py-2 px-3 font-semibold">
+                      ก่อนแก้ไข (เวลา / สถานะเดิม)
+                    </th>
+                    <th className="py-2 px-3 font-semibold">
+                      หลังแก้ไข (เวลา / สถานะใหม่)
+                    </th>
+                    <th className="py-2 px-3 font-semibold">หมายเหตุ HR ที่จะบันทึก</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {selectedKeys.map((k) => {
+                    const beforeRec = dailyRecordByKey.get(k);
+                    const afterRec = previewAuditResult.dailyRecords.find(
+                      (r) => r.key === k
+                    );
+                    if (!beforeRec || !afterRec) return null;
+                    return (
+                      <tr key={k} className="hover:bg-slate-50">
+                        <td className="py-2 px-3 font-mono">
+                          {formatDateDisplay(beforeRec.date)}
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-slate-900">
+                          {beforeRec.fullName} ({beforeRec.nickname})
+                        </td>
+                        <td className="py-2 px-3 text-rose-700">
+                          {beforeRec.effectiveScanIn} -{' '}
+                          {beforeRec.effectiveScanOut} ({beforeRec.scanStatus})
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-emerald-700">
+                          {afterRec.effectiveScanIn} -{' '}
+                          {afterRec.effectiveScanOut} ({afterRec.scanStatus})
+                        </td>
+                        <td className="py-2 px-3 text-slate-700">
+                          {afterRec.hrNote}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+              <button
+                onClick={() => setIsBulkPreviewOpen(false)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs sm:text-sm font-medium hover:bg-slate-50 cursor-pointer"
+              >
+                ยกเลิก / กลับไปแก้ไข
+              </button>
+              <button
+                onClick={handleConfirmBulkSave}
+                className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold shadow-sm cursor-pointer"
+              >
+                ยืนยันและบันทึกการแก้ไขทั้ง {selectedKeys.length} รายการ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* MODAL 1: แก้ไข / ใส่หมายเหตุรายวันสำหรับ HR (Override เดี่ยว) */}
       {/* ===================================================================== */}
       {editingDailyRecord && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -2251,7 +3699,7 @@ export default function App() {
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <Upload className="w-5 h-5 text-indigo-600" />
-                อัปโหลดไฟล์ Excel (.xlsx) หรือ CSV ประจำเดือน
+                อัปโหลดไฟล์ &quot;บันทึกเข้างาน.xlsx&quot; หรือ &quot;แบบฟอร์มลาออนไลน์.xlsx&quot;
               </h3>
               <button
                 onClick={() => setIsUploadModalOpen(false)}
@@ -2261,37 +3709,47 @@ export default function App() {
               </button>
             </div>
 
-            <div className="p-4 border-2 border-dashed border-indigo-300 rounded-xl bg-indigo-50/40 text-center space-y-2">
-              <p className="text-xs sm:text-sm font-medium text-slate-800">
-                เลือกไฟล์ <strong>บันทึกเข้างาน.xlsx</strong> หรือ{' '}
-                <strong>แบบฟอร์มลาออนไลน์.xlsx</strong> (เลือกพร้อมกันหลายไฟล์ได้)
+            <div className="space-y-2 text-xs text-slate-600">
+              <p>
+                ระบบรองรับการอัปโหลดไฟล์ Excel (<code>.xlsx</code>,{' '}
+                <code>.xls</code>) และ <code>.csv</code> โดยจะตรวจสอบโครงสร้างคอลัมน์ให้อัตโนมัติ:
               </p>
-              <p className="text-xs text-slate-500">
-                ระบบรองรับการอ่านทุกชีตอัตโนมัติ และแยกแยะรูปแบบวันที่คอลัมน์ G (YYYY-MM-DD) กับคอลัมน์ I (DD/MM/YYYY) ให้ทันที
-              </p>
-              <label className="inline-flex items-center gap-2 px-4 py-2 mt-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold cursor-pointer">
-                <Upload className="w-4 h-4" />
-                เลือกไฟล์จากคอมพิวเตอร์
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+              <ul className="list-disc list-inside space-y-1 text-slate-700">
+                <li>
+                  <strong>ไฟล์บันทึกเข้างาน:</strong> อ่านคอลัมน์ G (วันที่เรียง{' '}
+                  <code>YYYY-MM-DD</code>) จากทุกชีตในไฟล์
+                </li>
+                <li>
+                  <strong>ไฟล์แบบฟอร์มลาออนไลน์:</strong> อ่านคอลัมน์ I, J (วันที่เรียง{' '}
+                  <code>DD/MM/YYYY</code>) และชีต &quot;สิทธิคงเหลือ&quot; พร้อมแยกสัดส่วนวันลาข้ามเดือนอัตโนมัติ
+                </li>
+              </ul>
             </div>
 
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-indigo-300 rounded-xl p-6 bg-indigo-50/40 hover:bg-indigo-50 transition cursor-pointer">
+              <Upload className="w-8 h-8 text-indigo-600 mb-2" />
+              <span className="text-sm font-semibold text-indigo-900">
+                คลิกเพื่อเลือกไฟล์ Excel หรือ CSV (เลือกได้หลายไฟล์พร้อมกัน)
+              </span>
+              <input
+                type="file"
+                multiple
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+
             {uploadStatusMsg && (
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 whitespace-pre-line">
+              <pre className="p-3 rounded-lg bg-slate-900 text-emerald-300 text-xs whitespace-pre-wrap font-mono max-h-40 overflow-y-auto">
                 {uploadStatusMsg}
-              </div>
+              </pre>
             )}
 
             <div className="flex justify-end">
               <button
                 onClick={() => setIsUploadModalOpen(false)}
-                className="px-4 py-2 rounded-lg bg-slate-800 text-white text-xs sm:text-sm font-semibold cursor-pointer"
+                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs sm:text-sm font-medium cursor-pointer"
               >
                 เสร็จสิ้น
               </button>
@@ -2301,17 +3759,18 @@ export default function App() {
       )}
 
       {/* ===================================================================== */}
-      {/* MODAL 3: เพิ่มใบลาออนไลน์ใหม่ */}
+      {/* MODAL 3: บันทึกใบลาออนไลน์ใหม่ในแอป */}
       {/* ===================================================================== */}
       {isAddLeaveModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <form
             onSubmit={handleAddManualLeave}
-            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4"
+            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4"
           >
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h3 className="text-base font-bold text-slate-900">
-                บันทึกการใช้สิทธิการลาเพิ่มเติม
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-indigo-600" />
+                บันทึกข้อมูลการลาพนักงานเพิ่ม
               </h3>
               <button
                 type="button"
@@ -2334,7 +3793,7 @@ export default function App() {
                 >
                   {employeeMappings.map((m) => (
                     <option key={m.empCode} value={m.empCode}>
-                      {m.fullName} ({m.nickname}) — {m.position} ({m.department})
+                      {m.fullName} ({m.nickname}) — {m.position}
                     </option>
                   ))}
                 </select>
@@ -2361,16 +3820,16 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block font-medium text-slate-700 mb-1">
-                    จำนวนชั่วโมงลา (8 ชม. = 1 วัน)
+                    จำนวนชั่วโมงที่ลา (8 ชม. = 1.00 วัน)
                   </label>
                   <input
                     type="number"
                     step="0.5"
                     min="0.5"
+                    required
                     value={newLeaveHours}
                     onChange={(e) => setNewLeaveHours(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    required
                   />
                 </div>
               </div>
@@ -2378,17 +3837,17 @@ export default function App() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-slate-700 mb-1">
-                    ตั้งแต่วันที่
+                    ลาตั้งแต่วันที่
                   </label>
                   <input
                     type="date"
+                    required
                     value={newLeaveStartDate}
                     onChange={(e) => {
                       setNewLeaveStartDate(e.target.value);
                       setNewLeaveEndDate(e.target.value);
                     }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    required
                   />
                 </div>
                 <div>
@@ -2397,52 +3856,55 @@ export default function App() {
                   </label>
                   <input
                     type="date"
+                    required
                     value={newLeaveEndDate}
                     onChange={(e) => setNewLeaveEndDate(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    required
                   />
                 </div>
               </div>
 
               <div>
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newLeaveIsUnpaid}
+                    onChange={(e) => setNewLeaveIsUnpaid(e.target.checked)}
+                    className="rounded text-rose-600"
+                  />
+                  <span className="font-medium text-rose-700">
+                    ระบุเป็นการลาไม่รับค่าจ้าง (Leave Without Pay)
+                  </span>
+                </label>
+              </div>
+
+              <div>
                 <label className="block font-medium text-slate-700 mb-1">
-                  เหตุผลการลา
+                  เหตุผลการลา / หมายเหตุ
                 </label>
                 <input
                   type="text"
-                  placeholder="ระบุเหตุผลการลา..."
+                  placeholder="เช่น พบแพทย์ตามนัด, ธุระส่วนตัว..."
                   value={newLeaveReason}
                   onChange={(e) => setNewLeaveReason(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
-
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={newLeaveIsUnpaid}
-                  onChange={(e) => setNewLeaveIsUnpaid(e.target.checked)}
-                />
-                <span className="text-rose-700 font-medium">
-                  ระบุเป็น &quot;ลาไม่รับค่าจ้าง&quot;
-                </span>
-              </label>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setIsAddLeaveModalOpen(false)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-xs sm:text-sm cursor-pointer"
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs sm:text-sm font-medium cursor-pointer"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs sm:text-sm font-semibold cursor-pointer"
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold cursor-pointer"
               >
-                บันทึกรายการลา
+                บันทึกใบลา
               </button>
             </div>
           </form>
@@ -2450,21 +3912,16 @@ export default function App() {
       )}
 
       {/* ===================================================================== */}
-      {/* MODAL 4: ตั้งค่าฐานข้อมูล Firebase Firestore */}
+      {/* MODAL 4: ตั้งค่าเชื่อมต่อ Firebase Firestore (โปรเจกต์ timeattendenceJCW) */}
       {/* ===================================================================== */}
       {isFirebaseModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Cloud className="w-5 h-5 text-indigo-600" />
-                  ตั้งค่าการเชื่อมต่อฐานข้อมูล Firebase Firestore
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  สถานะปัจจุบัน: {syncStatus}
-                </p>
-              </div>
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Database className="w-5 h-5 text-emerald-600" />
+                ฐานข้อมูล Firebase Firestore — โปรเจกต์ timeattendenceJCW
+              </h3>
               <button
                 onClick={() => setIsFirebaseModalOpen(false)}
                 className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
@@ -2473,31 +3930,17 @@ export default function App() {
               </button>
             </div>
 
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900">
+              สถานะปัจจุบัน: <strong>{syncStatus}</strong>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
                 <label className="block font-medium text-slate-700 mb-1">
-                  API Key (VITE_FIREBASE_API_KEY)
+                  Project ID
                 </label>
                 <input
                   type="text"
-                  placeholder="AIzaSy..."
-                  value={firebaseConfigInput.apiKey}
-                  onChange={(e) =>
-                    setFirebaseConfigInput({
-                      ...firebaseConfigInput,
-                      apiKey: e.target.value,
-                    })
-                  }
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  Project ID (VITE_FIREBASE_PROJECT_ID)
-                </label>
-                <input
-                  type="text"
-                  placeholder="timeattendencejcw"
                   value={firebaseConfigInput.projectId}
                   onChange={(e) =>
                     setFirebaseConfigInput({
@@ -2505,71 +3948,48 @@ export default function App() {
                       projectId: e.target.value,
                     })
                   }
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded"
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono"
                 />
               </div>
               <div>
                 <label className="block font-medium text-slate-700 mb-1">
-                  Auth Domain
+                  API Key
                 </label>
                 <input
                   type="text"
-                  placeholder="timeattendencejcw.firebaseapp.com"
-                  value={firebaseConfigInput.authDomain}
+                  value={firebaseConfigInput.apiKey}
                   onChange={(e) =>
                     setFirebaseConfigInput({
                       ...firebaseConfigInput,
-                      authDomain: e.target.value,
+                      apiKey: e.target.value,
                     })
                   }
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  App ID
-                </label>
-                <input
-                  type="text"
-                  placeholder="1:1071683652942:web:..."
-                  value={firebaseConfigInput.appId || ''}
-                  onChange={(e) =>
-                    setFirebaseConfigInput({
-                      ...firebaseConfigInput,
-                      appId: e.target.value,
-                    })
-                  }
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded"
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setIsFirebaseModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-medium cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
               <button
                 onClick={async () => {
                   saveFirebaseConfigToLocal(firebaseConfigInput);
                   await triggerSaveState();
                   setIsFirebaseModalOpen(false);
                 }}
-                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold cursor-pointer"
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
               >
-                บันทึกและซิงก์ข้อมูลขึ้น Firebase
-              </button>
-              <button
-                onClick={() => setIsFirebaseModalOpen(false)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs sm:text-sm cursor-pointer"
-              >
-                ปิดหน้าต่าง
+                บันทึกและซิงก์ขึ้น Firebase ทันที
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 no-print">
-        JCW International HR Time Attendance & Leave Audit System • Firebase (timeattendenceJCW) + GitHub + Vercel
-      </footer>
     </div>
   );
 }

@@ -1256,6 +1256,102 @@ export function exportHRPayrollReportToExcel(
 }
 
 /**
+ * ส่งออกไฟล์ CSV รายละเอียดรายวันและสรุปการลา (UTF-8 with BOM เปิดใน Excel ภาษาไทยไม่เพี้ยน)
+ */
+export function exportDetailedCSV(audit: MonthlyAuditOutput): void {
+  const headers = [
+    'ลำดับ',
+    'วันที่',
+    'วัน',
+    'ชื่อ-นามสกุล',
+    'ชื่อเล่น',
+    'ตำแหน่ง',
+    'แผนก/ฝ่าย',
+    'เวลาเข้า (ต้นฉบับ)',
+    'เวลาออก (ต้นฉบับ)',
+    'เวลาเข้า (ใช้คำนวณ)',
+    'เวลาออก (ใช้คำนวณ)',
+    'สถานะการสแกน',
+    'คำเตือนเวลาผิดปกติ',
+    'เกณฑ์เวลาสาย',
+    'สาย (ครั้ง)',
+    'สาย (นาที)',
+    'ลาป่วย',
+    'ลากิจ',
+    'ลาพักร้อน',
+    'ลาไม่รับค่าจ้าง',
+    'ลาอื่นๆ',
+    'รวมวันลาในวันนั้น',
+    'รายละเอียดการลา',
+    'หมายเหตุจากชีตสแกน',
+    'หมายเหตุ HR',
+    'สถานะการตรวจสอบ HR',
+    'ผู้แก้ไข/ตรวจสอบ',
+    'เวลาแก้ไขล่าสุด',
+  ];
+
+  const escapeCsvCell = (val: unknown): string => {
+    const str = val === null || val === undefined ? '' : String(val);
+    if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const rows = audit.dailyRecords.map((r, idx) => [
+    idx + 1,
+    formatDateDisplay(r.date),
+    r.dayOfWeek,
+    r.fullName,
+    r.nickname,
+    r.position,
+    r.department,
+    r.originalScanIn,
+    r.originalScanOut,
+    r.effectiveScanIn,
+    r.effectiveScanOut,
+    r.scanStatus,
+    r.suspiciousScanWarning || '-',
+    r.lateRuleApplied,
+    r.lateCount,
+    r.lateMinutes,
+    formatLeaveHuman(r.sickLeaveDays),
+    formatLeaveHuman(r.personalLeaveDays),
+    formatLeaveHuman(r.vacationLeaveDays),
+    formatLeaveHuman(r.unpaidLeaveDays),
+    formatLeaveHuman(r.otherLeaveDays),
+    formatLeaveHuman(r.totalLeaveDaysOnDate),
+    r.leaveDetails.join(' | ') || '-',
+    r.sheetNote || '-',
+    r.hrNote || '-',
+    r.isReviewed
+      ? r.hasHROverride
+        ? 'HR แก้ไขและตรวจแล้ว'
+        : 'ตรวจแล้ว'
+      : 'ยังไม่ได้ตรวจ',
+    r.reviewedBy || r.updatedBy || '-',
+    r.updatedAt || r.reviewedAt || '-',
+  ]);
+
+  const csvContent =
+    '\uFEFF' +
+    [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map((row) => row.map(escapeCsvCell).join(',')),
+    ].join('\r\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `JCW_รายละเอียดเวลาทำงานและการลา_${audit.yearMonth}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
  * ฟังก์ชันหลักเดิม (คงไว้เพื่อความเข้ากันได้) ชี้ไปยังรายงาน HR/Payroll ฉบับสมบูรณ์
  */
 export function exportMonthlyAuditToExcel(

@@ -12,6 +12,7 @@ import {
   MonthlyLeaveUsageReportItem,
   QuotaReportItem,
   RawAttendanceRow,
+  ReconciliationCheckItem,
   UnpaidAndOtherLeaveReportItem,
 } from '../types/attendance';
 import {
@@ -892,6 +893,12 @@ export function runMonthlyAttendanceAudit(params: {
         lateMinutes = override.overrideLateMinutes;
       }
 
+      // ตรวจจับเวลาสแกนเข้างานผิดปกติ เช่น สแกนเข้าช่วงบ่าย/เย็น (เช่น 16:10 น.) หรือสายเกิน 180 นาทีโดยไม่มีใบลา
+      let suspiciousScanWarning: string | undefined;
+      if (hasIn && totalLeaveDaysOnDate < 0.5 && lateMinutes >= 180) {
+        suspiciousScanWarning = `⚠️ เวลาเข้างานผิดปกติ (${effectiveScanIn} น. / คิดสาย ${lateMinutes} นาที) — อาจเป็นเวลาสแกนออกที่ถูกบันทึกในช่องเข้างาน กรุณาให้ HR ตรวจสอบก่อนคำนวณเงินเดือน`;
+      }
+
       prevWorkdayWasClientVisit =
         emp.isSales && salesStatus === 'คาดว่าไปพบลูกค้า';
 
@@ -917,6 +924,18 @@ export function runMonthlyAttendanceAudit(params: {
           note: override?.hrNote || rawRow?.sheetNote || '',
         });
       }
+
+      const hasMeaningfulOverride = Boolean(
+        override &&
+          (override.overrideScanIn ||
+            override.overrideScanOut ||
+            override.overrideStatus ||
+            (override.overrideLateCount !== undefined &&
+              override.overrideLateCount !== null) ||
+            (override.overrideLateMinutes !== undefined &&
+              override.overrideLateMinutes !== null) ||
+            override.hrNote)
+      );
 
       dailyRecords.push({
         key,
@@ -952,7 +971,13 @@ export function runMonthlyAttendanceAudit(params: {
         leaveDetails: leaveDetailsText,
         sheetNote: rawRow?.sheetNote || '',
         hrNote: override?.hrNote || '',
-        hasHROverride: Boolean(override),
+        hasHROverride: hasMeaningfulOverride,
+        isReviewed: Boolean(override?.isReviewed || hasMeaningfulOverride),
+        reviewedAt: override?.reviewedAt || override?.updatedAt,
+        reviewedBy: override?.reviewedBy || override?.updatedBy || (hasMeaningfulOverride ? 'HR' : undefined),
+        updatedBy: override?.updatedBy || (hasMeaningfulOverride ? 'HR' : undefined),
+        updatedAt: override?.updatedAt,
+        suspiciousScanWarning,
       });
     }
 
@@ -1200,6 +1225,81 @@ export function runMonthlyAttendanceAudit(params: {
       r.scanStatus !== 'ลาเต็มวัน/มีข้อมูลการลา'
   );
 
+  // รายการที่เวลาสแกนผิดปกติ เช่น สแกนเข้างาน 16:10 น.
+  const suspiciousScanRecords = dailyRecords.filter((r) =>
+    Boolean(r.suspiciousScanWarning)
+  );
+
+  // 8. ตรวจสอบยอดรวมระหว่างรายงานต่าง ๆ (Cross-Report Reconciliation Checks)
+  const sumMonthlyUsageDays = round2(
+    monthlyLeaveUsageList.reduce((acc, i) => acc + round2(i.days), 0)
+  );
+  const sumDiligenceLeaveDays = round2(
+    diligenceReport.reduce((acc, i) => acc + round2(i.totalLeaveDays), 0)
+  );
+  const sumUnpaidReportDays = round2(
+    unpaidAndOtherLeaveReport.reduce((acc, i) => acc + round2(i.unpaidDays), 0)
+  );
+  const sumLateReportCount = lateSummaryReport.reduce(
+    (acc, i) => acc + i.lateCount,
+    0
+  );
+  const sumLateReportMinutes = lateSummaryReport.reduce(
+    (acc, i) => acc + i.lateMinutes,
+    0
+  );
+  const countEligibleDiligence = diligenceReport.filter((d) => d.isEligible).length;
+
+  const reconciliationChecks: ReconciliationCheckItem[] = [
+    {
+      id: 'check-total-leave',
+      label: 'ยอดรวมวันลาทุกประเภททั้งเดือน',
+      sourceA: 'หน้าภาพรวมเงินเดือน & สรุปกิจกรรม',
+      valueA: formatLeaveHuman(activityGrandTotal.totalLeaveDays, {
+        zeroText: '0 วัน',
+      }),
+      sourceB: 'รายละเอียดการลาในเดือน & รายงานเบี้ยขยัน',
+      valueB: `${formatLeaveHuman(sumMonthlyUsageDays, { zeroText: '0 วัน' })} / ${formatLeaveHuman(sumDiligenceLeaveDays, { zeroText: '0 วัน' })}`,
+      isMatched:
+        activityGrandTotal.totalLeaveDays === sumMonthlyUsageDays &&
+        activityGrandTotal.totalLeaveDays === sumDiligenceLeaveDays,
+    },
+    {
+      id: 'check-unpaid-leave',
+      label: 'ยอดรวมวันลาไม่รับค่าจ้าง',
+      sourceA: 'หน้าภาพรวมเงินเดือน (Executive)',
+      valueA: formatLeaveHuman(activityGrandTotal.unpaidDays, {
+        zeroText: '0 วัน',
+      }),
+      sourceB: 'รายงานลาไม่รับค่าจ้าง',
+      valueB: formatLeaveHuman(sumUnpaidReportDays, { zeroText: '0 วัน' }),
+      isMatched: activityGrandTotal.unpaidDays === sumUnpaidReportDays,
+    },
+    {
+      id: 'check-late-summary',
+      label: 'ยอดรวมจำนวนครั้งและนาทีที่มาสาย',
+      sourceA: 'หน้าภาพรวมเงินเดือน (Executive)',
+      valueA: `${activityGrandTotal.lateCount} ครั้ง (${activityGrandTotal.lateMinutes} นาที)`,
+      sourceB: 'รายงานเวลาเข้างานสาย',
+      valueB: `${sumLateReportCount} ครั้ง (${sumLateReportMinutes} นาที)`,
+      isMatched:
+        activityGrandTotal.lateCount === sumLateReportCount &&
+        activityGrandTotal.lateMinutes === sumLateReportMinutes,
+    },
+    {
+      id: 'check-diligence-count',
+      label: 'จำนวนผู้ได้รับเบี้ยขยัน',
+      sourceA: 'หน้าภาพรวมเงินเดือน (Executive)',
+      valueA: `${activityGrandTotal.diligenceEligibleCount} คน`,
+      sourceB: 'รายงานเบี้ยขยัน',
+      valueB: `${countEligibleDiligence} คน`,
+      isMatched:
+        activityGrandTotal.diligenceEligibleCount === countEligibleDiligence,
+    },
+  ];
+
+  const isAllReconciled = reconciliationChecks.every((c) => c.isMatched);
+
   return {
     yearMonth,
     workdaysInMonth: activeWorkdays,
@@ -1213,5 +1313,8 @@ export function runMonthlyAttendanceAudit(params: {
     activityGrandTotal,
     quotaReport,
     scanAnomalyRecords,
+    suspiciousScanRecords,
+    reconciliationChecks,
+    isAllReconciled,
   };
 }

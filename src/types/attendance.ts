@@ -95,6 +95,28 @@ export interface HROverrideRecord {
   hrNote: string;
   previousSummary?: string;
   updatedAt: string;
+  updatedBy?: string;
+  isReviewed?: boolean;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
+export type PayrollCycleStatus =
+  | 'ยังไม่เริ่มตรวจ'
+  | 'กำลังตรวจ'
+  | 'เหลือรายการต้องแก้'
+  | 'พร้อมส่งหัวหน้า'
+  | 'ปิดรอบแล้ว';
+
+export interface CompanyProfileSettings {
+  companyName: string;
+  branchName: string;
+  standardStartTime: string;
+  graceEndTime: string;
+  salesNextDayStartTime: string;
+  hoursPerDay: number;
+  diligenceMaxLeaveDays: number;
+  hrReviewerName: string;
 }
 
 export interface AuditSettings {
@@ -102,6 +124,15 @@ export interface AuditSettings {
   excludeCarryoverLeaves: boolean;
   includeSheetLeaves: boolean;
   customHolidays: string[];
+  companyProfile?: CompanyProfileSettings;
+  closedMonths?: Record<
+    string,
+    {
+      closedAt: string;
+      closedBy: string;
+      status: PayrollCycleStatus;
+    }
+  >;
 }
 
 export interface DailyAuditRecord {
@@ -148,6 +179,12 @@ export interface DailyAuditRecord {
   sheetNote: string;
   hrNote: string;
   hasHROverride: boolean;
+  isReviewed: boolean;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+  suspiciousScanWarning?: string;
 }
 
 export interface DiligenceReportItem {
@@ -280,6 +317,16 @@ export interface QuotaReportItem {
   monthOtherAndUnpaidUsed: number;
 }
 
+export interface ReconciliationCheckItem {
+  id: string;
+  label: string;
+  sourceA: string;
+  valueA: string;
+  sourceB: string;
+  valueB: string;
+  isMatched: boolean;
+}
+
 export interface MonthlyAuditOutput {
   yearMonth: string;
   workdaysInMonth: string[];
@@ -309,4 +356,7 @@ export interface MonthlyAuditOutput {
   };
   quotaReport: QuotaReportItem[];
   scanAnomalyRecords: DailyAuditRecord[];
+  suspiciousScanRecords: DailyAuditRecord[];
+  reconciliationChecks: ReconciliationCheckItem[];
+  isAllReconciled: boolean;
 }

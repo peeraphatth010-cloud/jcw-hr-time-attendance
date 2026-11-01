@@ -12,6 +12,7 @@ export interface EmployeeMapping {
   fullName: string;
   nickname: string;
   department: string;
+  position?: string;
 }
 
 export interface RawAttendanceRow {
@@ -64,6 +65,7 @@ export interface EmployeeQuotaRecord {
   fullName: string;
   nickname: string;
   department: string;
+  position?: string;
   sickQuotaDays: number;
   personalQuotaDays: number;
   vacationQuotaDays: number;
@@ -108,6 +110,7 @@ export interface DailyAuditRecord {
   fullName: string;
   nickname: string;
   department: string;
+  position: string;
   isSales: boolean;
   originalScanIn: string;
   originalScanOut: string;
@@ -149,6 +152,7 @@ export interface DiligenceReportItem {
   fullName: string;
   nickname: string;
   department: string;
+  position: string;
   isSales: boolean;
   isEligible: boolean;
   totalWorkdays: number;
@@ -164,6 +168,7 @@ export interface LateSummaryReportItem {
   fullName: string;
   nickname: string;
   department: string;
+  position: string;
   lateCount: number;
   lateMinutes: number;
   dailyDetails: {
@@ -181,6 +186,7 @@ export interface UnpaidAndOtherLeaveReportItem {
   fullName: string;
   nickname: string;
   department: string;
+  position: string;
   unpaidDays: number;
   unpaidHours: number;
   otherDays: number;
@@ -203,6 +209,7 @@ export interface MonthlyLeaveUsageReportItem {
   fullName: string;
   nickname: string;
   department: string;
+  position: string;
   leaveType: LeaveCategory;
   isUnpaid: boolean;
   startDate: string;
@@ -222,6 +229,7 @@ export interface MonthlyActivitySummaryItem {
   fullName: string;
   nickname: string;
   department: string;
+  position: string;
   sickDays: number;
   sickHours: number;
   personalDays: number;
@@ -245,6 +253,7 @@ export interface QuotaReportItem {
   fullName: string;
   nickname: string;
   department: string;
+  position: string;
   sickQuota: number;
   sickUsedTotal: number;
   sickRemaining: number;

@@ -32,8 +32,8 @@ export interface PersistedHRState {
   updatedAt: string;
 }
 
-const LOCAL_STORAGE_STATE_KEY = 'jcw_hr_attendance_state_v2';
-const LOCAL_STORAGE_FIREBASE_CONFIG_KEY = 'jcw_hr_firebase_config_v2';
+const LOCAL_STORAGE_STATE_KEY = 'jcw_hr_attendance_state_v3';
+const LOCAL_STORAGE_FIREBASE_CONFIG_KEY = 'jcw_hr_firebase_config_v3';
 
 let firestoreDb: Firestore | null = null;
 let currentApp: FirebaseApp | null = null;

@@ -4,6 +4,7 @@ import { formatDateDisplay, formatYearMonthThai } from './dateAndTime';
 
 /**
  * ส่งออกรายงานสรุปผล HR Time Attendance & Leave Audit ทั้ง 6 รายงานหลัก + ตารางตรวจสอบรายวัน เป็นไฟล์ Excel (.xlsx)
+ * (ตัดคอลัมน์รหัสพนักงานและ ID บุคคลออกจากรายงานทั้งหมดตามความต้องการของผู้ใช้)
  */
 export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
   const wb = XLSX.utils.book_new();
@@ -14,14 +15,15 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
   // ============================================================================
   const sheet1Rows = [
     [`รายงานที่ 1: สรุปรายชื่อผู้ได้รับเบี้ยขยัน ประจำเดือน ${monthLabel}`],
-    ['เกณฑ์บริษัท: (1) ไม่ได้อยู่ฝ่ายขาย (2) สแกนเข้างานไม่เกิน 08:00 น. ทุกวันทำงาน (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.0 วัน'],
+    [
+      'เกณฑ์บริษัท: (1) พนักงานทุกแผนก (รวมฝ่ายขาย ยกเว้นตำแหน่งเจ้าหน้าที่ฝ่ายขาย) (2) สแกนเข้างานไม่เกิน 08:00 น. ทุกวันทำงาน (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.0 วัน',
+    ],
     [],
     [
       'ลำดับ',
-      'รหัสพนักงาน',
-      'ID สแกนนิ้ว',
       'ชื่อ-นามสกุล',
       'ชื่อเล่น',
+      'ตำแหน่ง',
       'แผนก/ฝ่าย',
       'ผลการพิจารณาเบี้ยขยัน',
       'จำนวนวันมาทำงาน (วัน)',
@@ -31,10 +33,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     ],
     ...audit.diligenceReport.map((item, idx) => [
       idx + 1,
-      item.empCode,
-      item.personId,
       item.fullName,
       item.nickname,
+      item.position,
       item.department,
       item.isEligible ? 'ได้รับเบี้ยขยัน' : 'ไม่ได้รับเบี้ยขยัน',
       item.daysWorked,
@@ -53,14 +54,15 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
   // ============================================================================
   const sheet2Rows: (string | number)[][] = [
     [`รายงานที่ 2: สรุปการเข้างานสาย ประจำเดือน ${monthLabel}`],
-    ['เกณฑ์เวลาสาย: สแกนเข้าตั้งแต่ 08:16 น. ขึ้นไป (นับนาทีสายจากหลัง 08:15 น.) / ฝ่ายขายวันถัดจากพบลูกค้า อนุโลมถึง 09:00 น.'],
+    [
+      'เกณฑ์เวลาสาย: สแกนเข้าตั้งแต่ 08:16 น. ขึ้นไป (นับนาทีสายจากหลัง 08:15 น.) / ฝ่ายขายวันถัดจากพบลูกค้า อนุโลมถึง 09:00 น.',
+    ],
     [],
     [
       'ลำดับ',
-      'รหัสพนักงาน',
-      'ID สแกนนิ้ว',
       'ชื่อ-นามสกุล',
       'ชื่อเล่น',
+      'ตำแหน่ง',
       'แผนก/ฝ่าย',
       'จำนวนครั้งที่สาย (ครั้ง)',
       'รวมเวลาสาย (นาที)',
@@ -68,10 +70,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     ],
     ...audit.lateSummaryReport.map((item, idx) => [
       idx + 1,
-      item.empCode,
-      item.personId,
       item.fullName,
       item.nickname,
+      item.position,
       item.department,
       item.lateCount,
       item.lateMinutes,
@@ -87,9 +88,8 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     [],
     [
       '',
-      '',
-      '',
       'รวมทั้งสิ้น',
+      '',
       '',
       '',
       audit.activityGrandTotal.lateCount,
@@ -104,15 +104,16 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
   // ชีตที่ 3: รายงานการลาไม่รับค่าจ้าง และ ลาอื่นๆ
   // ============================================================================
   const sheet3Rows: (string | number)[][] = [
-    [`รายงานที่ 3: สรุปการลาไม่รับค่าจ้าง และ ลาอื่นๆ ประจำเดือน ${monthLabel}`],
+    [
+      `รายงานที่ 3: สรุปการลาไม่รับค่าจ้าง และ ลาอื่นๆ ประจำเดือน ${monthLabel}`,
+    ],
     ['อัตราการแปลงเวลา: 8 ชั่วโมง = 1 วันทำงาน'],
     [],
     [
       'ลำดับ',
-      'รหัสพนักงาน',
-      'ID สแกนนิ้ว',
       'ชื่อ-นามสกุล',
       'ชื่อเล่น',
+      'ตำแหน่ง',
       'แผนก/ฝ่าย',
       'ลาไม่รับค่าจ้าง (วัน)',
       'ลาไม่รับค่าจ้าง (ชม.)',
@@ -124,10 +125,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     ],
     ...audit.unpaidAndOtherLeaveReport.map((item, idx) => [
       idx + 1,
-      item.empCode,
-      item.personId,
       item.fullName,
       item.nickname,
+      item.position,
       item.department,
       item.unpaidDays,
       item.unpaidHours,
@@ -147,17 +147,26 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     [],
     [
       '',
-      '',
-      '',
       'รวมทั้งสิ้น',
+      '',
       '',
       '',
       audit.activityGrandTotal.unpaidDays,
       audit.activityGrandTotal.unpaidHours,
       audit.activityGrandTotal.otherDays,
       audit.activityGrandTotal.otherHours,
-      Number((audit.activityGrandTotal.unpaidDays + audit.activityGrandTotal.otherDays).toFixed(4)),
-      Number((audit.activityGrandTotal.unpaidHours + audit.activityGrandTotal.otherHours).toFixed(2)),
+      Number(
+        (
+          audit.activityGrandTotal.unpaidDays +
+          audit.activityGrandTotal.otherDays
+        ).toFixed(4)
+      ),
+      Number(
+        (
+          audit.activityGrandTotal.unpaidHours +
+          audit.activityGrandTotal.otherHours
+        ).toFixed(2)
+      ),
       '',
     ],
   ];
@@ -172,10 +181,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     [],
     [
       'ลำดับ',
-      'รหัสพนักงาน',
-      'ID สแกนนิ้ว',
       'ชื่อ-นามสกุล',
       'ชื่อเล่น',
+      'ตำแหน่ง',
       'แผนก/ฝ่าย',
       'ประเภทการลา',
       'สถานะรับค่าจ้าง',
@@ -190,10 +198,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     ],
     ...audit.monthlyLeaveUsageReport.map((item, idx) => [
       idx + 1,
-      item.empCode,
-      item.personId,
       item.fullName,
       item.nickname,
+      item.position,
       item.department,
       item.leaveType,
       item.isUnpaid ? 'ไม่รับค่าจ้าง' : 'ตามสิทธิ์ปกติ',
@@ -214,14 +221,15 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
   // ชีตที่ 5: สรุปกิจกรรมการลาและมาสาย (รายบุคคล + รวมทั้งบริษัท)
   // ============================================================================
   const sheet5Rows: (string | number)[][] = [
-    [`รายงานที่ 5: สรุปกิจกรรมการลาทุกประเภทและสถิติการมาสาย ประจำเดือน ${monthLabel}`],
+    [
+      `รายงานที่ 5: สรุปกิจกรรมการลาทุกประเภทและสถิติการมาสาย ประจำเดือน ${monthLabel}`,
+    ],
     [],
     [
       'ลำดับ',
-      'รหัสพนักงาน',
-      'ID สแกนนิ้ว',
       'ชื่อ-นามสกุล',
       'ชื่อเล่น',
+      'ตำแหน่ง',
       'แผนก/ฝ่าย',
       'ลาป่วย (วัน)',
       'ลาป่วย (ชม.)',
@@ -241,10 +249,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     ],
     ...audit.activitySummaryReport.map((item, idx) => [
       idx + 1,
-      item.empCode,
-      item.personId,
       item.fullName,
       item.nickname,
+      item.position,
       item.department,
       item.sickDays,
       item.sickHours,
@@ -265,9 +272,8 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     [],
     [
       '',
-      '',
-      '',
       'รวมทั้งสิ้น (Grand Total)',
+      '',
       '',
       '',
       audit.activityGrandTotal.sickDays,
@@ -294,14 +300,15 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
   // ชีตที่ 6: สิทธิคงเหลือแต่ละบุคคล
   // ============================================================================
   const sheet6Rows: (string | number)[][] = [
-    [`รายงานที่ 6: สิทธิวันลาคงเหลือรายบุคคล (อ้างอิงฐานข้อมูลสิทธิคงเหลือ + สรุปใช้ไปในเดือน ${monthLabel})`],
+    [
+      `รายงานที่ 6: สิทธิวันลาคงเหลือรายบุคคล (อ้างอิงฐานข้อมูลสิทธิคงเหลือ + สรุปใช้ไปในเดือน ${monthLabel})`,
+    ],
     [],
     [
       'ลำดับ',
-      'รหัสพนักงาน',
-      'ID สแกนนิ้ว',
       'ชื่อ-นามสกุล',
       'ชื่อเล่น',
+      'ตำแหน่ง',
       'แผนก/ฝ่าย',
       'สิทธิ์ลาป่วย (วัน)',
       'ใช้ไปสะสม-ลาป่วย (วัน)',
@@ -322,10 +329,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     ],
     ...audit.quotaReport.map((item, idx) => [
       idx + 1,
-      item.empCode,
-      item.personId,
       item.fullName,
       item.nickname,
+      item.position,
       item.department,
       item.sickQuota,
       item.sickUsedTotal,
@@ -352,16 +358,16 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
   // ชีตที่ 7: ตารางตรวจสอบเวลาเข้า-ออกรายวัน & หมายเหตุ HR
   // ============================================================================
   const sheet7Rows: (string | number)[][] = [
-    [`ตารางตรวจสอบการสแกนนิ้วรายวัน และบันทึกการแก้ไข/หมายเหตุจาก HR ประจำเดือน ${monthLabel}`],
+    [
+      `ตารางตรวจสอบการสแกนนิ้วรายวัน และบันทึกการแก้ไข/หมายเหตุจาก HR ประจำเดือน ${monthLabel}`,
+    ],
     [],
     [
       'วันที่',
       'วันของสัปดาห์',
-      'รหัสพนักงาน',
-      'ID สแกนนิ้ว',
-      'ชื่อสแกนนิ้ว',
       'ชื่อ-นามสกุล',
       'ชื่อเล่น',
+      'ตำแหน่ง',
       'แผนก/ฝ่าย',
       'สแกนเข้า (ต้นฉบับ)',
       'สแกนออก (ต้นฉบับ)',
@@ -380,11 +386,9 @@ export function exportMonthlyAuditToExcel(audit: MonthlyAuditOutput): void {
     ...audit.dailyRecords.map((r) => [
       formatDateDisplay(r.date),
       r.dayOfWeek,
-      r.empCode,
-      r.personId,
-      r.scannerName,
       r.fullName,
       r.nickname,
+      r.position,
       r.department,
       r.originalScanIn,
       r.originalScanOut,

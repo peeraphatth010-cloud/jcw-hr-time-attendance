@@ -337,6 +337,7 @@ export function parseQuotaCsvText(csvText: string): EmployeeQuotaRecord[] {
       fullName,
       nickname: firstName || fullName,
       department: String(cols[4] || '').trim(),
+      position: String(cols[5] || '').trim(),
       sickQuotaDays: num(6),
       sickUsedDays: num(7),
       sickRemainingDays: num(8),

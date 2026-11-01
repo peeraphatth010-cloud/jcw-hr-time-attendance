@@ -11,14 +11,10 @@ import {
   Edit3,
   FileSpreadsheet,
   FileText,
-  Filter,
-  Info,
   Layers,
   Plus,
   Printer,
-  RefreshCw,
   Search,
-  Settings,
   ShieldCheck,
   Upload,
   UserCheck,
@@ -73,7 +69,7 @@ type ActiveTab =
   | 'report5_activity'
   | 'report6_quota'
   | 'daily_audit'
-  | 'id_mapping_rules';
+  | 'company_rules';
 
 const DEFAULT_SETTINGS: AuditSettings = {
   onlyApprovedLeaves: true,
@@ -117,9 +113,9 @@ export default function App() {
   >({});
   const [settings, setSettings] = useState<AuditSettings>(DEFAULT_SETTINGS);
   const [onlyMappedEmployees, setOnlyMappedEmployees] = useState<boolean>(true);
-  const [autoSkipEmptyDays, setAutoSkipEmptyDays] = useState<boolean>(true);
+  const [autoSkipEmptyDays] = useState<boolean>(true);
 
-  // เดือนที่เลือก (ค่าเริ่มต้น: 2026-10 เดือนตุลาคม ชีต 10 ล่าสุดตามคำสั่งผู้ใช้)
+  // เดือนที่เลือก (ค่าเริ่มต้น: 2026-10 เดือนตุลาคม ชีต 10 ล่าสุด)
   const [selectedYearMonth, setSelectedYearMonth] = useState<string>('2026-10');
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
 
@@ -160,12 +156,16 @@ export default function App() {
         }
       );
     });
-  const [syncStatus, setSyncStatus] = useState<string>('พร้อมใช้งาน (Local + Seed)');
+  const [syncStatus, setSyncStatus] = useState<string>(
+    'พร้อมใช้งาน (timeattendenceJCW)'
+  );
 
   // Modal เพิ่มใบลาออนไลน์ใหม่
   const [isAddLeaveModalOpen, setIsAddLeaveModalOpen] =
     useState<boolean>(false);
-  const [newLeaveEmpCode, setNewLeaveEmpCode] = useState<string>('010661001');
+  const [newLeaveEmpCode, setNewLeaveEmpCode] = useState<string>(
+    SEED_ID_MAPPING[0].empCode
+  );
   const [newLeaveType, setNewLeaveType] = useState<LeaveCategory>('ลาป่วย');
   const [newLeaveStartDate, setNewLeaveStartDate] =
     useState<string>('2026-10-15');
@@ -174,57 +174,58 @@ export default function App() {
   const [newLeaveReason, setNewLeaveReason] = useState<string>('');
   const [newLeaveIsUnpaid, setNewLeaveIsUnpaid] = useState<boolean>(false);
 
-  // Modal เพิ่มการผูก ID พนักงานใหม่
-  const [newMapPersonId, setNewMapPersonId] = useState<string>('');
-  const [newMapScannerName, setNewMapScannerName] = useState<string>('');
-  const [newMapEmpCode, setNewMapEmpCode] = useState<string>('');
-  const [newMapFullName, setNewMapFullName] = useState<string>('');
-  const [newMapNickname, setNewMapNickname] = useState<string>('');
-  const [newMapDept, setNewMapDept] = useState<string>('ฝ่ายแอดมิน');
-
   // โหลดข้อมูลจาก Firebase / LocalStorage ตอนเปิดแอป และซิงก์ข้อมูลเริ่มต้นขึ้น Firebase อัตโนมัติ
   useEffect(() => {
     let mounted = true;
     loadHRState().then(async ({ state, source }) => {
       if (!mounted) return;
-      if (state) {
-        if (
-          state.employeeMappings &&
-          state.employeeMappings.length > 0 &&
-          state.employeeMappings.every((m) => m.empCode && m.scannerName)
-        ) {
-          setEmployeeMappings(state.employeeMappings);
-        }
-        if (
-          state.quotaRecords &&
-          state.quotaRecords.length > 0 &&
-          state.quotaRecords.every((q) => q.sickQuotaDays > 0)
-        ) {
-          setQuotaRecords(state.quotaRecords);
-        }
-        if (state.leaveRecords && state.leaveRecords.length > 0) {
-          setLeaveRecords(state.leaveRecords);
-        }
-        if (state.hrOverrides) {
-          setHrOverrides(state.hrOverrides);
-        }
-        if (state.settings) {
-          setSettings(state.settings);
-        }
-      }
-      if (source === 'firebase') {
-        setSyncStatus('เชื่อมต่อและซิงก์ข้อมูลกับ Firebase (timeattendenceJCW) สำเร็จ');
+      const hasValidMappings =
+        state?.employeeMappings &&
+        state.employeeMappings.length > 0 &&
+        state.employeeMappings.every(
+          (m) => Boolean(m.empCode) && Boolean(m.scannerName) && Boolean(m.position)
+        );
+      const hasValidQuotas =
+        state?.quotaRecords &&
+        state.quotaRecords.length > 0 &&
+        state.quotaRecords.every((q) => q.sickQuotaDays > 0 && Boolean(q.position));
+
+      const nextMappings = hasValidMappings
+        ? state!.employeeMappings!
+        : SEED_ID_MAPPING;
+      const nextQuotas = hasValidQuotas
+        ? state!.quotaRecords!
+        : initialQuotaRecords;
+      const nextLeaves =
+        state?.leaveRecords && state.leaveRecords.length > 0
+          ? state.leaveRecords
+          : initialLeaveRecords;
+      const nextOverrides = state?.hrOverrides || {};
+      const nextSettings = state?.settings || DEFAULT_SETTINGS;
+
+      setEmployeeMappings(nextMappings);
+      setQuotaRecords(nextQuotas);
+      setLeaveRecords(nextLeaves);
+      setHrOverrides(nextOverrides);
+      setSettings(nextSettings);
+
+      if (source === 'firebase' && hasValidMappings && hasValidQuotas) {
+        setSyncStatus(
+          'เชื่อมต่อและซิงก์ข้อมูลกับ Firebase (timeattendenceJCW) สำเร็จ'
+        );
       } else {
         const res = await saveHRState({
-          employeeMappings: state?.employeeMappings || SEED_ID_MAPPING,
-          quotaRecords: state?.quotaRecords || initialQuotaRecords,
-          leaveRecords: state?.leaveRecords || initialLeaveRecords,
-          hrOverrides: state?.hrOverrides || {},
-          settings: state?.settings || DEFAULT_SETTINGS,
+          employeeMappings: nextMappings,
+          quotaRecords: nextQuotas,
+          leaveRecords: nextLeaves,
+          hrOverrides: nextOverrides,
+          settings: nextSettings,
           updatedAt: new Date().toISOString(),
         });
         if (res.savedFirebase) {
-          setSyncStatus('ซิงก์ข้อมูลเริ่มต้นขึ้น Firebase (timeattendenceJCW) สำเร็จ');
+          setSyncStatus(
+            'ซิงก์ข้อมูลล่าสุดขึ้น Firebase (timeattendenceJCW) สำเร็จ'
+          );
         }
       }
     });
@@ -250,9 +251,9 @@ export default function App() {
       updatedAt: new Date().toISOString(),
     });
     if (res.savedFirebase) {
-      setSyncStatus('บันทึกขึ้น Firebase Firestore แล้ว');
+      setSyncStatus('บันทึกขึ้น Firebase Firestore (timeattendenceJCW) แล้ว');
     } else if (res.savedLocal) {
-      setSyncStatus('บันทึกในเครื่องแล้ว (พร้อมซิงก์ Firebase)');
+      setSyncStatus('บันทึกในเครื่องแล้ว');
     }
   };
 
@@ -310,7 +311,10 @@ export default function App() {
       } else if (dailyFilterStatus === 'LATE') {
         if (r.lateCount === 0) return false;
       } else if (dailyFilterStatus === 'SALES_VISIT') {
-        if (r.salesStatus !== 'คาดว่าไปพบลูกค้า' && !r.isNextDayAfterClientVisit) {
+        if (
+          r.salesStatus !== 'คาดว่าไปพบลูกค้า' &&
+          !r.isNextDayAfterClientVisit
+        ) {
           return false;
         }
       } else if (dailyFilterStatus === 'OVERRIDDEN') {
@@ -322,8 +326,8 @@ export default function App() {
         const match =
           r.fullName.toLowerCase().includes(q) ||
           r.nickname.toLowerCase().includes(q) ||
-          r.scannerName.toLowerCase().includes(q) ||
-          r.empCode.toLowerCase().includes(q) ||
+          r.position.toLowerCase().includes(q) ||
+          r.department.toLowerCase().includes(q) ||
           r.date.includes(q) ||
           r.alertMessage.toLowerCase().includes(q) ||
           r.hrNote.toLowerCase().includes(q);
@@ -425,7 +429,6 @@ export default function App() {
       try {
         const res = await parseUploadedFile(file);
         if (res.attendanceRows.length > 0) {
-          // รวมข้อมูลสแกนนิ้ว (แทนที่เดือนที่ซ้ำหรือเพิ่มแถวใหม่)
           const uploadedDates = new Set(
             res.attendanceRows.map((r) => r.date.slice(0, 7))
           );
@@ -453,7 +456,7 @@ export default function App() {
         if (res.employeeMappings.length > 0) {
           nextMappings = res.employeeMappings;
           logs.push(
-            `ไฟล์ "${file.name}": นำเข้าตารางผูก ID บุคคล ${res.employeeMappings.length} รายการ`
+            `ไฟล์ "${file.name}": อัปเดตข้อมูลเชื่อมต่อพนักงาน ${res.employeeMappings.length} รายการ`
           );
         }
         if (res.detectedType === 'unknown') {
@@ -496,7 +499,7 @@ export default function App() {
       fullName: emp.fullName,
       nickname: emp.nickname,
       empCode: emp.empCode,
-      position: '-',
+      position: emp.position || '-',
       department: emp.department,
       leaveType: newLeaveIsUnpaid ? 'ลาไม่รับค่าจ้าง' : newLeaveType,
       reason: newLeaveReason || 'HR บันทึกผ่านเว็บแอป',
@@ -520,36 +523,6 @@ export default function App() {
       employeeMappings,
       quotaRecords,
       nextLeaves,
-      hrOverrides,
-      settings
-    );
-  };
-
-  // เพิ่มพนักงานในตารางผูก ID บุคคล
-  const handleAddMapping = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMapFullName.trim() || !newMapEmpCode.trim()) return;
-    const nextMappings: EmployeeMapping[] = [
-      ...employeeMappings,
-      {
-        personId: newMapPersonId.trim() || '0',
-        scannerName: newMapScannerName.trim() || newMapEmpCode.trim(),
-        empCode: newMapEmpCode.trim(),
-        fullName: newMapFullName.trim(),
-        nickname: newMapNickname.trim() || '-',
-        department: newMapDept,
-      },
-    ];
-    setEmployeeMappings(nextMappings);
-    setNewMapPersonId('');
-    setNewMapScannerName('');
-    setNewMapEmpCode('');
-    setNewMapFullName('');
-    setNewMapNickname('');
-    await triggerSaveState(
-      nextMappings,
-      quotaRecords,
-      leaveRecords,
       hrOverrides,
       settings
     );
@@ -581,11 +554,11 @@ export default function App() {
                     JCW International — HR Time Attendance & Leave Audit
                   </h1>
                   <span className="px-2.5 py-0.5 text-xs font-semibold bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 rounded-full">
-                    Business Rules v1.0
+                    timeattendenceJCW
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-blue-200 mt-0.5">
-                  ระบบตรวจสอบเวลาสแกนนิ้วเข้างาน ประวัติใบลาออนไลน์ เบี้ยขยัน และสิทธิคงเหลือรายบุคคล
+                  ระบบสรุปรายงานเวลาเข้างาน การลา เบี้ยขยัน และสิทธิคงเหลือรายบุคคล
                 </p>
               </div>
             </div>
@@ -716,17 +689,14 @@ export default function App() {
                 <span>ไม่นับแถว &quot;บันทึกเก่า/ทดสอบ&quot; ในฟอร์มลา</span>
               </label>
 
-              <label
-                className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10"
-                title="แสดงเฉพาะพนักงานตามไฟล์ ID บุคคลสำหรับเชื่อมต่อ (13 คน)"
-              >
+              <label className="inline-flex items-center gap-1.5 cursor-pointer bg-white/5 px-2.5 py-1 rounded border border-white/10">
                 <input
                   type="checkbox"
                   checked={onlyMappedEmployees}
                   onChange={(e) => setOnlyMappedEmployees(e.target.checked)}
                   className="rounded text-emerald-500"
                 />
-                <span>เฉพาะพนักงานในผัง ID บุคคล</span>
+                <span>เฉพาะพนักงานปัจจุบันของบริษัท</span>
               </label>
             </div>
           </div>
@@ -787,8 +757,8 @@ export default function App() {
                 badge: `${auditResult.scanAnomalyRecords.length} แจ้งเตือน`,
               },
               {
-                id: 'id_mapping_rules',
-                label: 'ผูก ID บุคคล & กฎบริษัท',
+                id: 'company_rules',
+                label: 'รายชื่อพนักงาน & กฎบริษัท',
                 icon: Users,
               },
             ].map((tab) => {
@@ -826,7 +796,7 @@ export default function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 space-y-6">
-        {/* Print Header (แสดงเฉพาะเวลาสั่งพิมพ์ PDF) */}
+        {/* Print Header */}
         <div className="hidden print:block border-b-2 border-slate-800 pb-4 mb-6">
           <h1 className="text-2xl font-bold text-slate-900">
             รายงานสรุปเวลาทำงานและการลาพนักงาน — บริษัท JCW International
@@ -965,7 +935,7 @@ export default function App() {
                   {formatYearMonthThai(selectedYearMonth)}
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  เงื่อนไขเบี้ยขยัน JCW: (1) ไม่ได้อยู่ฝ่ายขาย (2) ทุกวันทำงานต้องสแกนเข้างานไม่เกิน 08:00 น. (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.0 วัน
+                  เงื่อนไขเบี้ยขยัน: (1) พนักงานทุกแผนก (รวมฝ่ายขาย ยกเว้นตำแหน่งเจ้าหน้าที่ฝ่ายขาย) (2) ทุกวันทำงานต้องสแกนเข้างานไม่เกิน 08:00 น. (3) วันลารวมทุกประเภทในเดือนไม่เกิน 1.0 วัน
                 </p>
               </div>
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 self-start sm:self-center">
@@ -978,9 +948,8 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">รหัสพนักงาน</th>
-                    <th className="py-2.5 px-3 font-semibold">ID สแกน</th>
                     <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
                     <th className="py-2.5 px-3 font-semibold text-center">วันมาทำงาน</th>
                     <th className="py-2.5 px-3 font-semibold text-center">สแกนหลัง 08:00</th>
@@ -992,7 +961,7 @@ export default function App() {
                 <tbody className="divide-y divide-slate-200">
                   {auditResult.diligenceReport.map((item, idx) => (
                     <tr
-                      key={item.empCode}
+                      key={`${item.fullName}-${idx}`}
                       className={
                         item.isEligible
                           ? 'bg-emerald-50/50 hover:bg-emerald-50'
@@ -1000,14 +969,13 @@ export default function App() {
                       }
                     >
                       <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
-                      <td className="py-2.5 px-3 font-mono text-xs">{item.empCode}</td>
-                      <td className="py-2.5 px-3 font-mono text-xs">{item.personId}</td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {item.fullName}{' '}
                         <span className="text-slate-500 font-normal">
                           ({item.nickname})
                         </span>
                       </td>
+                      <td className="py-2.5 px-3 text-slate-700">{item.position}</td>
                       <td className="py-2.5 px-3">{item.department}</td>
                       <td className="py-2.5 px-3 text-center">{item.daysWorked} วัน</td>
                       <td className="py-2.5 px-3 text-center">
@@ -1087,9 +1055,8 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">รหัสพนักงาน</th>
-                    <th className="py-2.5 px-3 font-semibold">ID สแกน</th>
                     <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
                     <th className="py-2.5 px-3 font-semibold text-center">จำนวนครั้งที่สาย</th>
                     <th className="py-2.5 px-3 font-semibold text-center">รวมเวลาสาย (นาที)</th>
@@ -1099,7 +1066,7 @@ export default function App() {
                 <tbody className="divide-y divide-slate-200">
                   {auditResult.lateSummaryReport.map((item, idx) => (
                     <tr
-                      key={item.empCode}
+                      key={`${item.fullName}-${idx}`}
                       className={
                         item.lateCount > 0
                           ? 'bg-amber-50/30 hover:bg-amber-50/60'
@@ -1107,14 +1074,13 @@ export default function App() {
                       }
                     >
                       <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
-                      <td className="py-2.5 px-3 font-mono text-xs">{item.empCode}</td>
-                      <td className="py-2.5 px-3 font-mono text-xs">{item.personId}</td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {item.fullName}{' '}
                         <span className="text-slate-500 font-normal">
                           ({item.nickname})
                         </span>
                       </td>
+                      <td className="py-2.5 px-3 text-slate-700">{item.position}</td>
                       <td className="py-2.5 px-3">{item.department}</td>
                       <td className="py-2.5 px-3 text-center">
                         <span
@@ -1172,7 +1138,7 @@ export default function App() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
-                    <td colSpan={5} className="py-2.5 px-3 text-right">
+                    <td colSpan={4} className="py-2.5 px-3 text-right">
                       รวมทั้งบริษัท (Grand Total):
                     </td>
                     <td className="py-2.5 px-3 text-center text-amber-800">
@@ -1221,8 +1187,8 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">รหัสพนักงาน</th>
                     <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
                     <th className="py-2.5 px-3 font-semibold text-center bg-rose-50/60">
                       ลาไม่รับค่าจ้าง (วัน / ชม.)
@@ -1241,7 +1207,7 @@ export default function App() {
                 <tbody className="divide-y divide-slate-200">
                   {auditResult.unpaidAndOtherLeaveReport.map((item, idx) => (
                     <tr
-                      key={item.empCode}
+                      key={`${item.fullName}-${idx}`}
                       className={
                         item.totalDays > 0
                           ? 'bg-rose-50/30 hover:bg-rose-50/60'
@@ -1249,13 +1215,13 @@ export default function App() {
                       }
                     >
                       <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
-                      <td className="py-2.5 px-3 font-mono text-xs">{item.empCode}</td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {item.fullName}{' '}
                         <span className="text-slate-500 font-normal">
                           ({item.nickname})
                         </span>
                       </td>
+                      <td className="py-2.5 px-3 text-slate-700">{item.position}</td>
                       <td className="py-2.5 px-3">{item.department}</td>
                       <td className="py-2.5 px-3 text-center">
                         {item.unpaidDays > 0 ? (
@@ -1354,7 +1320,7 @@ export default function App() {
                   {formatYearMonthThai(selectedYearMonth)}
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  เชื่อมโยงข้อมูลจากไฟล์ &quot;แบบฟอร์มลาออนไลน์&quot; (คอลัมน์ I วันที่-เดือน-ปี) และคอลัมน์วันลาในชีตสแกนนิ้ว
+                  เชื่อมโยงข้อมูลจากไฟล์ &quot;แบบฟอร์มลาออนไลน์&quot; และคอลัมน์วันลาในชีตสแกนนิ้ว
                 </p>
               </div>
               <button
@@ -1371,8 +1337,8 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-3 font-semibold">รหัสพนักงาน</th>
                     <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-3 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-3 font-semibold">แผนก/ฝ่าย</th>
                     <th className="py-2.5 px-3 font-semibold">ประเภทสิทธิที่ใช้</th>
                     <th className="py-2.5 px-3 font-semibold">วันที่ใช้สิทธิ (ตั้งแต่วันที่ - ถึงวันที่)</th>
@@ -1396,12 +1362,14 @@ export default function App() {
                     auditResult.monthlyLeaveUsageReport.map((item, idx) => (
                       <tr key={item.id} className="hover:bg-slate-50">
                         <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
-                        <td className="py-2.5 px-3 font-mono text-xs">{item.empCode}</td>
                         <td className="py-2.5 px-3 font-medium text-slate-900">
                           {item.fullName}{' '}
                           <span className="text-slate-500 font-normal">
                             ({item.nickname})
                           </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-700">
+                          {item.position}
                         </td>
                         <td className="py-2.5 px-3">{item.department}</td>
                         <td className="py-2.5 px-3">
@@ -1474,9 +1442,8 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-2.5 font-semibold">ลำดับ</th>
-                    <th className="py-2.5 px-2.5 font-semibold">รหัสพนักงาน</th>
-                    <th className="py-2.5 px-2.5 font-semibold">ID</th>
                     <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-2.5 font-semibold">ตำแหน่ง</th>
                     <th className="py-2.5 px-2.5 font-semibold">แผนก</th>
                     <th className="py-2.5 px-2.5 font-semibold text-center bg-blue-50/60">
                       ลาป่วย (วัน/ชม.)
@@ -1509,15 +1476,16 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {auditResult.activitySummaryReport.map((item, idx) => (
-                    <tr key={item.empCode} className="hover:bg-slate-50">
+                    <tr key={`${item.fullName}-${idx}`} className="hover:bg-slate-50">
                       <td className="py-2.5 px-2.5 text-slate-500">{idx + 1}</td>
-                      <td className="py-2.5 px-2.5 font-mono text-xs">{item.empCode}</td>
-                      <td className="py-2.5 px-2.5 font-mono text-xs">{item.personId}</td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {item.fullName}{' '}
                         <span className="text-slate-500 font-normal">
                           ({item.nickname})
                         </span>
+                      </td>
+                      <td className="py-2.5 px-2.5 text-xs text-slate-700">
+                        {item.position}
                       </td>
                       <td className="py-2.5 px-2.5 text-xs">{item.department}</td>
                       <td className="py-2.5 px-2.5 text-center">
@@ -1610,7 +1578,7 @@ export default function App() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-indigo-950 text-white font-bold">
-                    <td colSpan={5} className="py-3 px-3 text-right">
+                    <td colSpan={4} className="py-3 px-3 text-right">
                       รวมทั้งบริษัท (Grand Total):
                     </td>
                     <td className="py-3 px-2.5 text-center text-sky-200">
@@ -1664,7 +1632,7 @@ export default function App() {
                 รายงานที่ 6: สรุปสิทธิวันลาคงเหลือรายบุคคล (อ้างอิงจากชีต &quot;สิทธิคงเหลือ&quot; เป็นหลัก)
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                แสดงโควตาวันลาที่ได้ทั้งหมด วันลาที่ใช้ไปสะสม และวันลาคงเหลือของพนักงานแต่ละคน พร้อมเปรียบเทียบยอดใช้ในเดือน {selectedYearMonth}
+                แสดงโควตาวันลาที่ได้ทั้งหมด วันลาที่ใช้ไปสะสม และวันลาคงเหลือของพนักงานแต่ละคน
               </p>
             </div>
 
@@ -1673,13 +1641,13 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-2.5 font-semibold" rowSpan={2}>
-                      รหัสพนักงาน
-                    </th>
-                    <th className="py-2.5 px-2.5 font-semibold" rowSpan={2}>
-                      ID
+                      ลำดับ
                     </th>
                     <th className="py-2.5 px-3 font-semibold" rowSpan={2}>
                       ชื่อ-นามสกุล (ชื่อเล่น)
+                    </th>
+                    <th className="py-2.5 px-2.5 font-semibold" rowSpan={2}>
+                      ตำแหน่ง
                     </th>
                     <th className="py-2.5 px-2.5 font-semibold" rowSpan={2}>
                       แผนก
@@ -1732,15 +1700,17 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {auditResult.quotaReport.map((q) => (
-                    <tr key={q.empCode} className="hover:bg-slate-50">
-                      <td className="py-2.5 px-2.5 font-mono text-xs">{q.empCode}</td>
-                      <td className="py-2.5 px-2.5 font-mono text-xs">{q.personId}</td>
+                  {auditResult.quotaReport.map((q, idx) => (
+                    <tr key={`${q.fullName}-${idx}`} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-2.5 text-slate-500">{idx + 1}</td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {q.fullName}{' '}
                         <span className="text-slate-500 font-normal">
                           ({q.nickname})
                         </span>
+                      </td>
+                      <td className="py-2.5 px-2.5 text-xs text-slate-700">
+                        {q.position}
                       </td>
                       <td className="py-2.5 px-2.5 text-xs">{q.department}</td>
                       {/* ลาป่วย */}
@@ -1810,7 +1780,7 @@ export default function App() {
                   <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
                   <input
                     type="text"
-                    placeholder="ค้นหาชื่อ, วันที่, หมายเหตุ..."
+                    placeholder="ค้นหาชื่อ, ตำแหน่ง, วันที่, หมายเหตุ..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-8 pr-3 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500"
@@ -1853,8 +1823,8 @@ export default function App() {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
                     <th className="py-2.5 px-3 font-semibold">วันที่</th>
-                    <th className="py-2.5 px-3 font-semibold">พนักงาน</th>
-                    <th className="py-2.5 px-2.5 font-semibold">แผนก</th>
+                    <th className="py-2.5 px-3 font-semibold">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                    <th className="py-2.5 px-2.5 font-semibold">ตำแหน่ง / แผนก</th>
                     <th className="py-2.5 px-2.5 font-semibold text-center">
                       สแกนต้นฉบับ (เข้า - ออก)
                     </th>
@@ -1898,11 +1868,12 @@ export default function App() {
                       </td>
                       <td className="py-2.5 px-3 font-medium text-slate-900">
                         {r.fullName}{' '}
-                        <span className="text-slate-500">
-                          ({r.nickname} / ID:{r.personId})
-                        </span>
+                        <span className="text-slate-500">({r.nickname})</span>
                       </td>
-                      <td className="py-2.5 px-2.5">{r.department}</td>
+                      <td className="py-2.5 px-2.5">
+                        <div className="font-medium text-slate-800">{r.position}</div>
+                        <div className="text-slate-500 text-[11px]">{r.department}</div>
+                      </td>
                       <td className="py-2.5 px-2.5 text-center font-mono text-slate-600">
                         {r.originalScanIn} - {r.originalScanOut}
                       </td>
@@ -1981,111 +1952,65 @@ export default function App() {
         )}
 
         {/* ===================================================================== */}
-        {/* TAB 8: ผูก ID บุคคล & กฎการมาทำงานบริษัท */}
+        {/* TAB 8: รายชื่อพนักงาน & กฎการมาทำงานบริษัท */}
         {/* ===================================================================== */}
-        {activeTab === 'id_mapping_rules' && (
+        {activeTab === 'company_rules' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* ตารางผูก ID บุคคล */}
+            {/* รายชื่อพนักงานและสิทธิ์เบี้ยขยันตามตำแหน่ง */}
             <section className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
               <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
                 <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Users className="w-5 h-5 text-indigo-600" />
-                  ตารางผูก ID บุคคลสำหรับเชื่อมต่อ (สแกนนิ้ว ↔ แบบฟอร์มลาออนไลน์)
+                  รายชื่อพนักงาน ตำแหน่ง และสิทธิ์การพิจารณาเบี้ยขยัน
                 </h2>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  ใช้เชื่อมโยง ID บุคคลและชื่อเล่นในเครื่องสแกนนิ้วเข้ากับรหัสพนักงานและชื่อ-นามสกุลจริง
+                  พนักงานทุกแผนก (รวมฝ่ายขาย) มีสิทธิได้รับเบี้ยขยัน ยกเว้นตำแหน่ง &quot;เจ้าหน้าที่ฝ่ายขาย&quot;
                 </p>
               </div>
 
-              <div className="p-4 border-b border-slate-200 bg-slate-50/50">
-                <form
-                  onSubmit={handleAddMapping}
-                  className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs"
-                >
-                  <input
-                    type="text"
-                    placeholder="ID บุคคล (เช่น 25)"
-                    value={newMapPersonId}
-                    onChange={(e) => setNewMapPersonId(e.target.value)}
-                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white"
-                  />
-                  <input
-                    type="text"
-                    placeholder="ชื่อในสแกนนิ้ว (เช่น Sita)"
-                    value={newMapScannerName}
-                    onChange={(e) => setNewMapScannerName(e.target.value)}
-                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white"
-                  />
-                  <input
-                    type="text"
-                    placeholder="รหัสพนักงาน *"
-                    value={newMapEmpCode}
-                    onChange={(e) => setNewMapEmpCode(e.target.value)}
-                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white"
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="ชื่อ-นามสกุลจริง *"
-                    value={newMapFullName}
-                    onChange={(e) => setNewMapFullName(e.target.value)}
-                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white"
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="ชื่อเล่นไทย (เช่น สิตา)"
-                    value={newMapNickname}
-                    onChange={(e) => setNewMapNickname(e.target.value)}
-                    className="px-2.5 py-1.5 border border-slate-300 rounded bg-white"
-                  />
-                  <div className="flex gap-1">
-                    <select
-                      value={newMapDept}
-                      onChange={(e) => setNewMapDept(e.target.value)}
-                      className="px-2 py-1.5 border border-slate-300 rounded bg-white flex-1"
-                    >
-                      <option value="ฝ่ายแอดมิน">ฝ่ายแอดมิน</option>
-                      <option value="ฝ่ายขาย">ฝ่ายขาย</option>
-                      <option value="ฝ่ายคลังสินค้า">ฝ่ายคลังสินค้า</option>
-                    </select>
-                    <button
-                      type="submit"
-                      className="px-3 py-1.5 bg-indigo-600 text-white font-semibold rounded hover:bg-indigo-500 cursor-pointer"
-                    >
-                      + เพิ่ม
-                    </button>
-                  </div>
-                </form>
-              </div>
-
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+                <table className="w-full text-left border-collapse text-xs sm:text-sm">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
-                      <th className="py-2 px-3">ID บุคคล</th>
-                      <th className="py-2 px-3">ชื่อสแกนนิ้ว</th>
-                      <th className="py-2 px-3">รหัสพนักงาน</th>
-                      <th className="py-2 px-3">ชื่อ-นามสกุล</th>
-                      <th className="py-2 px-3">ชื่อเล่น</th>
-                      <th className="py-2 px-3">แผนก/ฝ่าย</th>
+                      <th className="py-2.5 px-3">ลำดับ</th>
+                      <th className="py-2.5 px-3">ชื่อ-นามสกุล (ชื่อเล่น)</th>
+                      <th className="py-2.5 px-3">ตำแหน่ง</th>
+                      <th className="py-2.5 px-3">แผนก/ฝ่าย</th>
+                      <th className="py-2.5 px-3 text-center">สิทธิ์เบี้ยขยันตามตำแหน่ง</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {employeeMappings.map((m) => (
-                      <tr key={m.empCode} className="hover:bg-slate-50">
-                        <td className="py-2 px-3 font-mono font-bold text-indigo-700">
-                          {m.personId}
-                        </td>
-                        <td className="py-2 px-3 font-medium">{m.scannerName}</td>
-                        <td className="py-2 px-3 font-mono">{m.empCode}</td>
-                        <td className="py-2 px-3 font-medium text-slate-900">
-                          {m.fullName}
-                        </td>
-                        <td className="py-2 px-3">{m.nickname}</td>
-                        <td className="py-2 px-3">{m.department}</td>
-                      </tr>
-                    ))}
+                    {employeeMappings.map((m, idx) => {
+                      const isExcludedPos =
+                        (m.position || '').includes('เจ้าหน้าที่ฝ่ายขาย') ||
+                        (m.position || '').includes('เจ้าหน้าที่ขาย');
+                      return (
+                        <tr key={`${m.fullName}-${idx}`} className="hover:bg-slate-50">
+                          <td className="py-2.5 px-3 text-slate-500">{idx + 1}</td>
+                          <td className="py-2.5 px-3 font-medium text-slate-900">
+                            {m.fullName}{' '}
+                            <span className="text-slate-500 font-normal">
+                              ({m.nickname})
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700">
+                            {m.position || '-'}
+                          </td>
+                          <td className="py-2.5 px-3">{m.department}</td>
+                          <td className="py-2.5 px-3 text-center">
+                            {isExcludedPos ? (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                                ยกเว้น (เจ้าหน้าที่ฝ่ายขาย)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                มีสิทธิ์รับเบี้ยขยัน
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2122,7 +2047,9 @@ export default function App() {
                     2. กฎการพิจารณาเบี้ยขยัน (ต้องผ่านครบทั้ง 3 ข้อ)
                   </h3>
                   <ul className="list-disc list-inside mt-1 space-y-1 text-xs text-emerald-900">
-                    <li>ข้อ 1: ไม่ได้สังกัด <strong>ฝ่ายขาย</strong></li>
+                    <li>
+                      ข้อ 1: พนักงานทุกแผนก (รวมฝ่ายขาย) มีสิทธิได้รับเบี้ยขยัน <strong>ยกเว้นตำแหน่ง &quot;เจ้าหน้าที่ฝ่ายขาย&quot;</strong>
+                    </li>
                     <li>
                       ข้อ 2: ทุกวันทำงานที่มีการมาทำงาน ต้องมีเวลาสแกนเข้า <strong>&le; 08:00 น.</strong>
                     </li>
@@ -2134,10 +2061,9 @@ export default function App() {
 
                 <div className="p-3 rounded-lg bg-sky-50/60 border border-sky-200">
                   <h3 className="font-bold text-sky-950">
-                    3. กฎพิเศษสำหรับ &quot;ฝ่ายขาย&quot; (Sales Department)
+                    3. กฎพิเศษสำหรับการออกไปพบลูกค้าของฝ่ายขาย
                   </h3>
                   <ul className="list-disc list-inside mt-1 space-y-1 text-xs text-sky-900">
-                    <li>พนักงานฝ่ายขายไม่มีสิทธิได้รับเบี้ยขยัน</li>
                     <li>
                       ในวันทำงานที่พนักงานฝ่ายขาย<strong>ไม่พบสแกนนิ้วเข้างาน และไม่มีข้อมูลการลา</strong> ระบบจะตั้งสถานะเป็น{' '}
                       <strong>&quot;คาดว่าไปพบลูกค้า&quot;</strong>
@@ -2156,7 +2082,7 @@ export default function App() {
                   <ul className="list-disc list-inside mt-1 space-y-1 text-xs text-amber-900">
                     <li>อัตราแปลงชั่วโมงลา: <strong>8 ชั่วโมง = 1 วันทำงาน</strong> (4 ชม. = 0.5 วัน, 2 ชม. = 0.25 วัน)</li>
                     <li>
-                      <strong>ระวังรูปแบบวันที่:</strong> ไฟล์บันทึกเข้างาน (คอลัมน์ G) เรียง <code>YYYY-MM-DD</code> ส่วนไฟล์แบบฟอร์มลาออนไลน์ (คอลัมน์ I, J) เรียง <code>DD/MM/YYYY</code> (ระบบแปลงให้อัตโนมัติ)
+                      <strong>การเชื่อมข้อมูลอัตโนมัติ:</strong> ระบบใช้ ID บุคคลและรหัสพนักงานเชื่อมข้อมูลเบื้องหลังให้อัตโนมัติโดยไม่แสดงรหัสรกหน้าจอรายงาน
                     </li>
                   </ul>
                 </div>
@@ -2408,7 +2334,7 @@ export default function App() {
                 >
                   {employeeMappings.map((m) => (
                     <option key={m.empCode} value={m.empCode}>
-                      {m.fullName} ({m.nickname}) — {m.department}
+                      {m.fullName} ({m.nickname}) — {m.position} ({m.department})
                     </option>
                   ))}
                 </select>
@@ -2571,7 +2497,7 @@ export default function App() {
                 </label>
                 <input
                   type="text"
-                  placeholder="jcw-hr-attendance"
+                  placeholder="timeattendencejcw"
                   value={firebaseConfigInput.projectId}
                   onChange={(e) =>
                     setFirebaseConfigInput({
@@ -2588,7 +2514,7 @@ export default function App() {
                 </label>
                 <input
                   type="text"
-                  placeholder="jcw-hr-attendance.firebaseapp.com"
+                  placeholder="timeattendencejcw.firebaseapp.com"
                   value={firebaseConfigInput.authDomain}
                   onChange={(e) =>
                     setFirebaseConfigInput({
@@ -2605,7 +2531,7 @@ export default function App() {
                 </label>
                 <input
                   type="text"
-                  placeholder="1:123456789:web:abcdef"
+                  placeholder="1:1071683652942:web:..."
                   value={firebaseConfigInput.appId || ''}
                   onChange={(e) =>
                     setFirebaseConfigInput({
@@ -2642,7 +2568,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 no-print">
-        JCW International HR Time Attendance & Leave Audit System • รองรับ Firebase Firestore + GitHub + Vercel Deployment
+        JCW International HR Time Attendance & Leave Audit System • Firebase (timeattendenceJCW) + GitHub + Vercel
       </footer>
     </div>
   );

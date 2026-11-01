@@ -152,9 +152,9 @@ export default function App() {
       return (
         getSavedFirebaseConfig() || {
           apiKey: '',
-          authDomain: '',
-          projectId: '',
-          storageBucket: '',
+          authDomain: 'timeattendencejcw.firebaseapp.com',
+          projectId: 'timeattendencejcw',
+          storageBucket: 'timeattendencejcw.firebasestorage.app',
           messagingSenderId: '',
           appId: '',
         }

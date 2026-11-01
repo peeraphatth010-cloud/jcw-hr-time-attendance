@@ -38,8 +38,17 @@ const LOCAL_STORAGE_FIREBASE_CONFIG_KEY = 'jcw_hr_firebase_config_v1';
 let firestoreDb: Firestore | null = null;
 let currentApp: FirebaseApp | null = null;
 
+export const DEFAULT_FIREBASE_CONFIG: FirebaseConfigData = {
+  apiKey: 'AIzaSyBQWneN1EJsssNOcIMEgIn_oTideOOSagk',
+  authDomain: 'timeattendencejcw.firebaseapp.com',
+  projectId: 'timeattendencejcw',
+  storageBucket: 'timeattendencejcw.firebasestorage.app',
+  messagingSenderId: '1071683652942',
+  appId: '1:1071683652942:web:8689d2d96d71ee6d54e21f',
+};
+
 /**
- * โหลดค่าตั้งค่า Firebase จาก Environment Variables (Vercel) หรือจาก LocalStorage ที่ผู้ใช้ตั้งค่าไว้ในหน้าเว็บ
+ * โหลดค่าตั้งค่า Firebase จาก Environment Variables (Vercel), LocalStorage หรือค่าเริ่มต้นของโปรเจกต์ timeattendenceJCW
  */
 export function getSavedFirebaseConfig(): FirebaseConfigData | null {
   try {
@@ -66,7 +75,7 @@ export function getSavedFirebaseConfig(): FirebaseConfigData | null {
     };
   }
 
-  return null;
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 export function saveFirebaseConfigToLocal(config: FirebaseConfigData | null): void {

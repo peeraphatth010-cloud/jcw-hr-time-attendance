@@ -1,0 +1,2688 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>JCW — NEW YEAR GIFT GAME 🎁</title>
+  <!-- Google Fonts: Cinzel, Plus Jakarta Sans & Prompt -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-midnight: #050914;
+      --bg-navy: #0a1124;
+      --bg-card-glass: rgba(15, 23, 42, 0.72);
+      --gold-light: #fef08a;
+      --gold-main: #f5c451;
+      --gold-deep: #d97706;
+      --gold-glow: rgba(245, 196, 81, 0.45);
+      --red-lux: #b91c1c;
+      --emerald-lux: #047857;
+      --purple-lux: #6d28d9;
+      --ice-blue: #38bdf8;
+      --text-white: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-gold: rgba(245, 196, 81, 0.32);
+      --font-display: 'Cinzel', 'Prompt', serif;
+      --font-sans: 'Prompt', 'Plus Jakarta Sans', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      min-height: 100vh;
+      overflow-x: hidden;
+      background: radial-gradient(ellipse at 50% 0%, #162244 0%, #090e1e 55%, #040710 100%);
+      color: var(--text-white);
+      font-family: var(--font-sans);
+      position: relative;
+    }
+
+    /* Ambient Canvas Overlays */
+    #snowCanvas, #confettiCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #confettiCanvas {
+      z-index: 60;
+    }
+
+    /* Magical ambient glow orbs */
+    .ambient-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(90px);
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0.45;
+    }
+    .orb-1 {
+      width: 360px; height: 360px;
+      background: radial-gradient(circle, rgba(245,196,81,0.22), transparent 70%);
+      top: -80px; left: 50%;
+      transform: translateX(-50%);
+    }
+    .orb-2 {
+      width: 300px; height: 300px;
+      background: radial-gradient(circle, rgba(56,189,248,0.16), transparent 70%);
+      bottom: -60px; left: -60px;
+    }
+    .orb-3 {
+      width: 300px; height: 300px;
+      background: radial-gradient(circle, rgba(168,85,247,0.16), transparent 70%);
+      bottom: 10%; right: -60px;
+    }
+
+    /* Top Navigation Bar */
+    .top-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 68px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 40;
+      background: linear-gradient(180deg, rgba(5,9,20,0.88) 0%, rgba(5,9,20,0) 100%);
+      backdrop-filter: blur(6px);
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+
+    .brand-badge {
+      background: linear-gradient(135deg, #fde047 0%, #f59e0b 50%, #b45309 100%);
+      color: #090d16;
+      font-weight: 800;
+      font-size: 0.85rem;
+      letter-spacing: 1.5px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      box-shadow: 0 0 15px rgba(245, 196, 81, 0.4);
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+    .brand-text .title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--gold-light);
+    }
+    .brand-text .sub {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 0.8px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .icon-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(245, 196, 81, 0.28);
+      color: var(--text-white);
+      padding: 7px 13px;
+      border-radius: 999px;
+      font-family: var(--font-sans);
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(10px);
+    }
+    .icon-pill:hover {
+      border-color: var(--gold-main);
+      box-shadow: 0 0 14px rgba(245, 196, 81, 0.3);
+      transform: translateY(-1px);
+    }
+    .icon-pill.active-sound {
+      border-color: rgba(245, 196, 81, 0.55);
+      color: var(--gold-light);
+    }
+
+    /* Screen Container System */
+    .app-stage {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 76px 16px 32px;
+    }
+
+    .screen {
+      display: none;
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+      animation: screenFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .screen.active {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    @keyframes screenFadeIn {
+      from { opacity: 0; transform: translateY(14px) scale(0.985); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* ==========================================
+       1. WELCOME SCREEN
+       ========================================== */
+    .welcome-card {
+      position: relative;
+      width: 100%;
+      max-width: 820px;
+      min-height: 540px;
+      border-radius: 28px;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 22%, rgba(30, 58, 138, 0.55) 0%, rgba(10, 17, 36, 0.92) 65%, rgba(5, 9, 20, 0.98) 100%);
+      border: 1px solid rgba(245, 196, 81, 0.35);
+      box-shadow: 0 25px 70px rgba(0, 0, 0, 0.75), 0 0 40px rgba(245, 196, 81, 0.12);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 44px 24px 150px;
+      text-align: center;
+    }
+
+    .welcome-arc {
+      position: absolute;
+      top: 28px;
+      width: 85%;
+      max-width: 540px;
+      height: 180px;
+      border-top: 2px solid rgba(245, 196, 81, 0.45);
+      border-radius: 50% 50% 0 0;
+      pointer-events: none;
+      filter: drop-shadow(0 0 8px rgba(245, 196, 81, 0.5));
+    }
+
+    .welcome-star-top {
+      font-size: 2rem;
+      color: var(--gold-main);
+      text-shadow: 0 0 20px var(--gold-main), 0 0 40px #f59e0b;
+      margin-bottom: 8px;
+      animation: floatPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes floatPulse {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-6px) scale(1.08); }
+    }
+
+    .welcome-kicker {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 3.5px;
+      text-transform: uppercase;
+      color: var(--gold-light);
+      background: rgba(245, 196, 81, 0.12);
+      border: 1px solid rgba(245, 196, 81, 0.3);
+      padding: 5px 16px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+
+    .hero-title {
+      font-family: var(--font-display);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: 2px;
+      margin-bottom: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #fef08a 38%, #f59e0b 82%, #b45309 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 6px 24px rgba(245, 158, 11, 0.38));
+    }
+    .hero-title .line-1 {
+      display: block;
+      font-size: clamp(2.1rem, 5.5vw, 3.6rem);
+    }
+    .hero-title .line-2 {
+      display: block;
+      font-size: clamp(2.5rem, 6.8vw, 4.4rem);
+    }
+
+    .welcome-question {
+      font-size: clamp(1.05rem, 2.8vw, 1.35rem);
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 8px;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+    }
+
+    .welcome-sub {
+      font-size: clamp(0.85rem, 2.2vw, 1rem);
+      color: #cbd5e1;
+      letter-spacing: 0.6px;
+      margin-bottom: 26px;
+    }
+    .welcome-sub span {
+      color: var(--gold-main);
+      font-weight: 600;
+    }
+
+    /* Primary Gold CTA Button */
+    .btn-gold {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 15px 40px;
+      font-family: var(--font-sans);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #090d16;
+      background: linear-gradient(180deg, #fef08a 0%, #f5c451 48%, #d97706 100%);
+      border: 1px solid #fef9c3;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 10px 30px rgba(245, 158, 11, 0.45), 0 0 20px rgba(254, 240, 138, 0.4), inset 0 2px 2px rgba(255,255,255,0.7);
+      transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 5;
+    }
+    .btn-gold:hover {
+      transform: translateY(-3px) scale(1.03);
+      box-shadow: 0 14px 36px rgba(245, 158, 11, 0.65), 0 0 30px rgba(254, 240, 138, 0.65);
+    }
+    .btn-gold:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 28px;
+      font-family: var(--font-sans);
+      font-size: 0.96rem;
+      font-weight: 600;
+      color: var(--text-white);
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(245, 196, 81, 0.38);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    .btn-secondary:hover {
+      border-color: var(--gold-main);
+      background: rgba(30, 41, 59, 0.9);
+      box-shadow: 0 0 18px rgba(245, 196, 81, 0.25);
+    }
+
+    .village-scene {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 145px;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* ==========================================
+       2. CARD SELECTION SCREEN & TURN BANNER
+       ========================================== */
+    .turn-banner {
+      width: 100%;
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.96) 100%);
+      border: 1.5px solid rgba(245, 196, 81, 0.55);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55), 0 0 25px rgba(245, 196, 81, 0.16);
+      border-radius: 20px;
+      padding: 14px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .turn-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .turn-avatar {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #fef08a 0%, #f59e0b 100%);
+      color: #090d16;
+      font-size: 1.4rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 18px rgba(245, 196, 81, 0.45);
+      flex-shrink: 0;
+    }
+
+    .turn-info .kicker {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--gold-main);
+    }
+
+    .turn-info .current-player {
+      font-size: clamp(1.15rem, 3vw, 1.45rem);
+      font-weight: 800;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .starter-select-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .starter-select {
+      background: rgba(5, 9, 20, 0.9);
+      border: 1.5px solid var(--gold-main);
+      color: var(--gold-light);
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      font-weight: 700;
+      padding: 8px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .board-header {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding: 0 4px;
+    }
+
+    .board-title-wrap {
+      text-align: center;
+      flex: 1 1 100%;
+    }
+
+    .board-title {
+      font-family: var(--font-display);
+      font-size: clamp(1.3rem, 3.6vw, 1.85rem);
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: var(--gold-light);
+      text-shadow: 0 0 18px rgba(245, 196, 81, 0.45);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .board-subtitle {
+      font-size: 0.9rem;
+      color: #cbd5e1;
+      margin-top: 2px;
+    }
+
+    .board-controls {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .status-counter-pill {
+      font-size: 0.8rem;
+      color: #e2e8f0;
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      padding: 6px 14px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-counter-pill .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+
+    .hover-whisper {
+      min-height: 22px;
+      font-size: 0.84rem;
+      font-style: italic;
+      color: var(--gold-light);
+      text-align: center;
+      margin-bottom: 10px;
+      letter-spacing: 0.5px;
+      opacity: 0.9;
+      transition: opacity 0.25s ease;
+    }
+
+    /* 12 Cards Grid */
+    .cards-grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      perspective: 1200px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 640px) {
+      .cards-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 11px;
+      }
+    }
+
+    /* Individual 3D Luxury Card */
+    .tarot-card {
+      position: relative;
+      aspect-ratio: 3 / 3.9;
+      border-radius: 18px;
+      cursor: pointer;
+      transform-style: preserve-3d;
+      transition: transform 0.38s cubic-bezier(0.2, 0.85, 0.3, 1), box-shadow 0.35s ease, opacity 0.35s ease;
+      opacity: 0;
+      transform: translateY(30px) scale(0.88);
+    }
+
+    .tarot-card.fly-in {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    .card-face {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 18px;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--theme-grad, linear-gradient(145deg, #7f1d1d, #450a0a));
+      border: 1.5px solid rgba(245, 196, 81, 0.55);
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.6), inset 0 0 18px rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .card-face::before {
+      content: '';
+      position: absolute;
+      inset: 6px;
+      border-radius: 12px;
+      border: 1px solid rgba(254, 240, 138, 0.32);
+      pointer-events: none;
+    }
+
+    .card-corner-tl, .card-corner-br {
+      position: absolute;
+      font-size: 0.6rem;
+      color: rgba(254, 240, 138, 0.65);
+      pointer-events: none;
+    }
+    .card-corner-tl { top: 10px; left: 12px; }
+    .card-corner-br { bottom: 10px; right: 12px; }
+
+    .tarot-card:not(.is-locked):hover {
+      transform: translateY(-9px) rotateX(6deg) rotateY(-5deg) scale(1.04);
+      z-index: 5;
+    }
+    .tarot-card:not(.is-locked):hover .card-face {
+      border-color: #fef08a;
+      box-shadow: 0 18px 34px rgba(0, 0, 0, 0.75), 0 0 25px var(--theme-glow, rgba(245, 196, 81, 0.55));
+    }
+
+    .card-letter {
+      font-family: var(--font-display);
+      font-size: clamp(1.5rem, 3.8vw, 2.2rem);
+      font-weight: 800;
+      color: var(--gold-light);
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6), 0 0 14px rgba(245, 196, 81, 0.45);
+      line-height: 1;
+      margin-top: 8px;
+      letter-spacing: 1px;
+      z-index: 2;
+    }
+
+    .card-icon-svg {
+      width: clamp(34px, 7vw, 48px);
+      height: clamp(34px, 7vw, 48px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45));
+      z-index: 2;
+    }
+
+    .card-theme-label {
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: rgba(254, 240, 138, 0.82);
+      z-index: 2;
+    }
+
+    /* LOCKED / USED Card State */
+    .tarot-card.is-locked {
+      cursor: not-allowed;
+      filter: saturate(0.2) brightness(0.65);
+    }
+    .tarot-card.is-locked .card-face {
+      border-color: rgba(148, 163, 184, 0.25);
+    }
+
+    .locked-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 9, 20, 0.72);
+      backdrop-filter: blur(2px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      z-index: 6;
+      border-radius: 18px;
+    }
+    .locked-badge {
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(245, 196, 81, 0.4);
+      color: var(--gold-light);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ==========================================
+       3. SHUFFLE FULLSCREEN OVERLAY
+       ========================================== */
+    .overlay-modal {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.94) 0%, rgba(4, 7, 16, 0.98) 100%);
+      backdrop-filter: blur(12px);
+      z-index: 50;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+    }
+    .overlay-modal.active {
+      display: flex;
+      animation: fadeInFast 0.28s ease forwards;
+    }
+    @keyframes fadeInFast {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    .shuffle-ring {
+      position: relative;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      border: 1px dashed rgba(245, 196, 81, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      box-shadow: 0 0 60px rgba(245, 196, 81, 0.15);
+    }
+
+    .orbit-cards-container {
+      position: absolute;
+      inset: 0;
+      animation: spinRing 2.2s linear infinite;
+    }
+    @keyframes spinRing {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    .mini-orbit-card {
+      position: absolute;
+      width: 48px;
+      height: 66px;
+      border-radius: 8px;
+      border: 1px solid var(--gold-main);
+      background: linear-gradient(135deg, #311042, #0f172a);
+      color: var(--gold-light);
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 15px rgba(245, 196, 81, 0.4);
+    }
+
+    /* ==========================================
+       4 & 5. SELECTED CARD FOCUS & 3D FLIP STAGE
+       ========================================== */
+    .focus-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      max-width: 440px;
+      width: 100%;
+    }
+
+    .focus-drawer-pill {
+      background: rgba(245, 196, 81, 0.14);
+      border: 1px solid rgba(245, 196, 81, 0.4);
+      color: var(--gold-light);
+      padding: 5px 16px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .focus-kicker {
+      font-size: 0.82rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #cbd5e1;
+      margin-bottom: 4px;
+    }
+
+    .focus-letter-title {
+      font-family: var(--font-display);
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #ffffff;
+      text-shadow: 0 0 20px var(--gold-main);
+      margin-bottom: 20px;
+    }
+
+    .big-card-scene {
+      position: relative;
+      width: 230px;
+      height: 310px;
+      perspective: 1400px;
+      margin-bottom: 28px;
+    }
+
+    .card-halo {
+      position: absolute;
+      inset: -30px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(245, 196, 81, 0.42) 0%, rgba(245, 158, 11, 0.1) 50%, transparent 72%);
+      filter: blur(16px);
+      z-index: 0;
+      animation: pulseHalo 2.4s ease-in-out infinite;
+    }
+    @keyframes pulseHalo {
+      0%, 100% { transform: scale(0.95); opacity: 0.75; }
+      50%      { transform: scale(1.12); opacity: 1; }
+    }
+
+    .big-card-3d {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+      transition: transform 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 2;
+    }
+
+    .big-card-3d.shaking {
+      animation: cardAnticipationShake 0.55s ease-in-out infinite;
+    }
+
+    @keyframes cardAnticipationShake {
+      0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1.03); }
+      20% { transform: translate(-4px, 2px) rotate(-2.5deg) scale(1.05); }
+      40% { transform: translate(4px, -2px) rotate(2.5deg) scale(1.05); }
+      60% { transform: translate(-4px, -1px) rotate(-2deg) scale(1.06); }
+      80% { transform: translate(4px, 2px) rotate(2deg) scale(1.06); }
+    }
+
+    .big-card-3d.flipping-3d {
+      animation: dramatic3DFlip 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    @keyframes dramatic3DFlip {
+      0%   { transform: rotateY(0deg) scale(1.05); }
+      45%  { transform: rotateY(360deg) scale(1.16); }
+      85%  { transform: rotateY(700deg) scale(1.22); }
+      100% { transform: rotateY(720deg) scale(1.1); }
+    }
+
+    .big-card-face {
+      position: absolute;
+      inset: 0;
+      border-radius: 24px;
+      border: 2px solid #fef08a;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 35px rgba(245, 196, 81, 0.55);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 20px;
+      backface-visibility: hidden;
+    }
+
+    .big-card-face::after {
+      content: '';
+      position: absolute;
+      inset: 10px;
+      border-radius: 16px;
+      border: 1.5px solid rgba(254, 240, 138, 0.45);
+      pointer-events: none;
+    }
+
+    .big-card-letter {
+      font-family: var(--font-display);
+      font-size: 3.6rem;
+      font-weight: 900;
+      color: var(--gold-light);
+      text-shadow: 0 4px 20px rgba(0,0,0,0.6), 0 0 25px rgba(245, 196, 81, 0.7);
+      line-height: 1;
+      letter-spacing: 1.5px;
+    }
+
+    .destiny-progress-wrap {
+      width: 100%;
+      max-width: 320px;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .destiny-progress-wrap.active {
+      display: flex;
+    }
+    .destiny-bar-bg {
+      width: 100%;
+      height: 10px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(245, 196, 81, 0.35);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .destiny-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #fef08a, #f59e0b);
+      box-shadow: 0 0 12px #fef08a;
+      transition: width 0.15s linear;
+    }
+    .destiny-status-txt {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--gold-light);
+    }
+
+    .light-burst {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle, #ffffff 0%, #fef08a 40%, transparent 80%);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 70;
+    }
+    .light-burst.flash {
+      animation: burstFlash 0.85s ease-out forwards;
+    }
+    @keyframes burstFlash {
+      0%   { opacity: 0; transform: scale(0.5); }
+      25%  { opacity: 0.95; transform: scale(1.05); }
+      100% { opacity: 0; transform: scale(1.4); }
+    }
+
+    /* ==========================================
+       6. REVEAL RESULT SCREEN
+       ========================================== */
+    .reveal-card {
+      position: relative;
+      width: 100%;
+      max-width: 580px;
+      border-radius: 28px;
+      background: radial-gradient(circle at 50% 0%, rgba(69, 26, 3, 0.55) 0%, rgba(15, 23, 42, 0.92) 55%, rgba(5, 9, 20, 0.96) 100%);
+      border: 1.5px solid rgba(245, 196, 81, 0.55);
+      box-shadow: 0 25px 70px rgba(0, 0, 0, 0.85), 0 0 50px rgba(245, 196, 81, 0.22);
+      padding: 36px 24px 32px;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .reveal-gift-icon {
+      font-size: 3.4rem;
+      margin-bottom: 8px;
+      display: inline-block;
+      animation: giftBounce 2s ease-in-out infinite;
+      filter: drop-shadow(0 0 20px rgba(245, 196, 81, 0.6));
+    }
+    @keyframes giftBounce {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      25% { transform: translateY(-8px) rotate(-5deg); }
+      75% { transform: translateY(-4px) rotate(5deg); }
+    }
+
+    .reveal-kicker {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: var(--gold-main);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .reveal-sub {
+      font-size: 1.1rem;
+      color: #e2e8f0;
+      margin-bottom: 6px;
+    }
+
+    .reveal-employee-name {
+      font-size: clamp(2.2rem, 6.5vw, 3.4rem);
+      font-weight: 800;
+      line-height: 1.15;
+      margin: 6px 0 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #fef08a 45%, #f59e0b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 4px 20px rgba(245, 158, 11, 0.5));
+      word-break: break-word;
+    }
+
+    .from-card-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 18px;
+      border-radius: 999px;
+      background: rgba(245, 196, 81, 0.14);
+      border: 1px solid rgba(245, 196, 81, 0.45);
+      color: var(--gold-light);
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    /* Next Drawer Callout Box */
+    .next-turn-box {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.16) 0%, rgba(9, 13, 26, 0.88) 100%);
+      border: 1.5px solid rgba(16, 185, 129, 0.45);
+      border-radius: 18px;
+      padding: 16px 18px;
+      margin-bottom: 22px;
+    }
+    .next-turn-box .next-label {
+      font-size: 0.85rem;
+      color: #6ee7b7;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .next-turn-box .next-person {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #ffffff;
+    }
+
+    .reveal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    /* ==========================================
+       7. SECRET MODE / HANDOFF SCREEN
+       ========================================== */
+    .secret-modal-card {
+      width: 100%;
+      max-width: 460px;
+      border-radius: 26px;
+      background: rgba(10, 17, 36, 0.92);
+      border: 1px solid rgba(245, 196, 81, 0.4);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(245, 196, 81, 0.15);
+      padding: 36px 24px;
+      text-align: center;
+    }
+    .secret-emoji {
+      font-size: 4rem;
+      margin-bottom: 12px;
+      filter: drop-shadow(0 6px 18px rgba(245, 196, 81, 0.35));
+    }
+
+    /* ==========================================
+       8. ADMIN DASHBOARD PANEL
+       ========================================== */
+    .admin-panel {
+      width: 100%;
+      max-width: 920px;
+      background: rgba(10, 17, 36, 0.92);
+      border: 1px solid rgba(245, 196, 81, 0.32);
+      border-radius: 24px;
+      box-shadow: 0 25px 65px rgba(0, 0, 0, 0.85);
+      padding: 24px;
+      backdrop-filter: blur(14px);
+    }
+
+    .admin-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+      margin-bottom: 20px;
+    }
+
+    .admin-progress-box {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(245, 196, 81, 0.25);
+      border-radius: 16px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+
+    .admin-progress-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .admin-bar-bg {
+      width: 100%;
+      height: 12px;
+      background: rgba(30, 41, 59, 0.9);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .admin-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #f5c451);
+      border-radius: 999px;
+      transition: width 0.35s ease;
+    }
+
+    .admin-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .admin-card-item {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .admin-card-item.used {
+      border-color: rgba(16, 185, 129, 0.45);
+      background: rgba(6, 78, 59, 0.18);
+    }
+
+    .admin-row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .admin-letter-badge {
+      min-width: 40px;
+      height: 34px;
+      padding: 0 8px;
+      border-radius: 9px;
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 0.95rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: linear-gradient(135deg, #f59e0b, #b45309);
+    }
+
+    .admin-status-tag {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .admin-status-tag.locked {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .admin-status-tag.available {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+
+    .admin-input {
+      width: 100%;
+      background: rgba(5, 9, 20, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      color: #fff;
+      padding: 8px 11px;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: 0.88rem;
+    }
+    .admin-input:focus {
+      outline: none;
+      border-color: var(--gold-main);
+    }
+
+    .admin-mini-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .btn-xs {
+      flex: 1;
+      padding: 6px 10px;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 7px;
+      cursor: pointer;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(30, 41, 59, 0.85);
+      color: #e2e8f0;
+      transition: all 0.2s;
+    }
+    .btn-xs:hover {
+      border-color: var(--gold-main);
+      color: var(--gold-light);
+    }
+
+    .admin-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    /* Toast Notification */
+    .toast-box {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid var(--gold-main);
+      color: var(--gold-light);
+      padding: 11px 22px;
+      border-radius: 999px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.75);
+      z-index: 90;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+    }
+    .toast-box.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient Background Layers -->
+  <div class="ambient-orb orb-1"></div>
+  <div class="ambient-orb orb-2"></div>
+  <div class="ambient-orb orb-3"></div>
+  <canvas id="snowCanvas"></canvas>
+  <canvas id="confettiCanvas"></canvas>
+  <div id="lightBurst" class="light-burst"></div>
+
+  <!-- Top Bar -->
+  <header class="top-bar">
+    <div class="brand-logo" onclick="goHomeScreen()">
+      <span class="brand-badge">JCW</span>
+      <div class="brand-text">
+        <span class="title">NEW YEAR GIFT</span>
+        <span class="sub">14 Roman Cards · 14 Destinies · 1 Unbroken Chain</span>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button id="soundBtn" class="icon-pill active-sound" onclick="toggleSound()">
+        <span id="soundIcon">🔊</span>
+        <span id="soundLabel">Sound ON</span>
+      </button>
+      <button class="icon-pill" onclick="openAdminModal()">
+        <span>🛡️</span>
+        <span>Admin</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Stage -->
+  <main class="app-stage">
+
+    <!-- =================================================
+         SCREEN 1: WELCOME SCREEN
+         ================================================= -->
+    <section id="screenWelcome" class="screen active">
+      <div class="welcome-card">
+        <div class="welcome-arc"></div>
+        <div class="welcome-star-top">★</div>
+        <div class="welcome-kicker">JCW · NEW YEAR GIFT</div>
+
+        <h1 class="hero-title">
+          <span class="line-1">NEW YEAR</span>
+          <span class="line-2">GIFT GAME</span>
+        </h1>
+
+        <p class="welcome-question">ปีใหม่นี้… คุณจะได้ของขวัญจากใคร?</p>
+        <p class="welcome-sub"><span>14 ใบการ์ด (I–XIV)</span> · <span>เปิดเจอของใคร คนนั้นจับต่อทันที!</span></p>
+
+        <button class="btn-gold" onclick="startGameFlow()">
+          <span>🎁</span>
+          <span>เริ่มเกม</span>
+          <span>→</span>
+        </button>
+
+        <!-- Decorative Luxury Christmas Village Silhouette & Glow -->
+        <svg class="village-scene" viewBox="0 0 800 150" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="snowHill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1e293b" stop-opacity="0.85"/>
+              <stop offset="100%" stop-color="#050914" stop-opacity="1"/>
+            </linearGradient>
+            <linearGradient id="warmWindow" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#fef08a"/>
+              <stop offset="100%" stop-color="#f59e0b"/>
+            </linearGradient>
+          </defs>
+          <polygon points="55,35 20,120 90,120" fill="#064e3b" opacity="0.8"/>
+          <polygon points="55,15 28,85 82,85" fill="#047857" opacity="0.85"/>
+          <polygon points="115,50 85,125 145,125" fill="#065f46" opacity="0.75"/>
+          <polygon points="735,30 695,125 775,125" fill="#064e3b" opacity="0.8"/>
+          <polygon points="735,10 705,85 765,85" fill="#047857" opacity="0.85"/>
+          <polygon points="675,55 645,125 705,125" fill="#065f46" opacity="0.75"/>
+          <polygon points="165,65 135,95 195,95" fill="#78350f"/>
+          <rect x="143" y="95" width="44" height="35" fill="#451a03"/>
+          <rect x="153" y="102" width="10" height="12" rx="2" fill="url(#warmWindow)"/>
+          <rect x="168" y="102" width="10" height="12" rx="2" fill="url(#warmWindow)"/>
+          <path d="M0,115 Q200,90 400,118 T800,108 L800,150 L0,150 Z" fill="url(#snowHill)"/>
+          <rect x="95" y="112" width="22" height="18" rx="3" fill="#b91c1c"/>
+          <rect x="104" y="112" width="4" height="18" fill="#f5c451"/>
+          <rect x="625" y="114" width="20" height="16" rx="3" fill="#6d28d9"/>
+          <rect x="633" y="114" width="4" height="16" fill="#fef08a"/>
+          <circle cx="55" cy="14" r="3.5" fill="#fef08a"/>
+          <circle cx="735" cy="10" r="3.5" fill="#fef08a"/>
+          <circle cx="240" cy="118" r="2.5" fill="#f5c451"/>
+          <circle cx="560" cy="120" r="2.5" fill="#f5c451"/>
+        </svg>
+      </div>
+    </section>
+
+    <!-- =================================================
+         SCREEN 2: CARD SELECTION (A - L) + TURN TRACKER
+         ================================================= -->
+    <section id="screenBoard" class="screen">
+
+      <!-- CHAIN TURN TRACKER BANNER -->
+      <div class="turn-banner">
+        <div class="turn-left">
+          <div class="turn-avatar">🎯</div>
+          <div class="turn-info">
+            <div id="turnStepKicker" class="kicker">TURN 1 / 14 · เริ่มต้นเปิดของขวัญ</div>
+            <div id="turnPlayerDisplay" class="current-player">เลือกคนเริ่มจับคนแรก</div>
+          </div>
+        </div>
+
+        <!-- Shown ONLY on Turn 1 (when 0 cards are opened) so they can pick or randomize who starts -->
+        <div id="starterPickerBox" class="starter-select-wrap">
+          <select id="starterSelect" class="starter-select" onchange="onChangeStarterSelect(this.value)"></select>
+          <button class="icon-pill" onclick="pickRandomStarter()">🎲 สุ่มคนเริ่ม</button>
+        </div>
+      </div>
+
+      <div class="board-header">
+        <div class="board-title-wrap">
+          <h2 class="board-title">✨ CHOOSE YOUR CARD ✨</h2>
+          <p id="boardSubInstruction" class="board-subtitle">เลือกไพ่ 1 ใบที่คุณอยากเปิด (เปิดเจอของใคร คนนั้นออกมาจับต่อ!)</p>
+        </div>
+
+        <div class="board-controls">
+          <div class="status-counter-pill">
+            <span class="dot"></span>
+            <span id="availableCountTxt">ว่าง 14 / 14 ใบ</span>
+          </div>
+
+          <button id="btnShuffle" class="icon-pill" onclick="triggerShuffleUI()">
+            <span>🔀</span>
+            <span>สับไพ่</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="hoverWhisper" class="hover-whisper">✨ Something magical is waiting for you...</div>
+
+      <!-- 12 Cards Grid -->
+      <div id="cardsGrid" class="cards-grid"></div>
+    </section>
+
+    <!-- =================================================
+         SCREEN 3: SELECTED CARD FOCUS & 3D FLIP
+         ================================================= -->
+    <section id="screenFocus" class="screen">
+      <div class="focus-stage">
+        <div id="focusDrawerBadge" class="focus-drawer-pill">🎯 คิวของ: K.พี</div>
+        <p class="focus-kicker">YOUR CARD IS</p>
+        <h2 id="focusLetterHeading" class="focus-letter-title">G</h2>
+
+        <div class="big-card-scene">
+          <div class="card-halo"></div>
+          <div id="bigCard3D" class="big-card-3d">
+            <div id="bigCardFace" class="big-card-face">
+              <div id="bigCardIcon" class="card-icon-svg" style="width:68px;height:68px;"></div>
+              <div id="bigCardLetter" class="big-card-letter">G</div>
+              <div id="bigCardTheme" class="card-theme-label" style="font-size:0.8rem;">SANTA</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons before Flip -->
+        <div id="focusBtnGroup" style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+          <button id="btnOpenCard" class="btn-gold" onclick="confirmOpenCard()">
+            <span>✨</span>
+            <span>OPEN CARD</span>
+          </button>
+          <button class="btn-secondary" onclick="cancelCardFocus()">
+            <span>← เปลี่ยนใบ</span>
+          </button>
+        </div>
+
+        <!-- Loading Progress during 3D Flip -->
+        <div id="destinyProgress" class="destiny-progress-wrap">
+          <p id="destinyStatusTxt" class="destiny-status-txt">กำลังค้นหาชะตาของคุณ…</p>
+          <div class="destiny-bar-bg">
+            <div id="destinyBarFill" class="destiny-bar-fill"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================
+         SCREEN 4: REVEAL RESULT & NEXT TURN ANNOUNCEMENT
+         ================================================= -->
+    <section id="screenReveal" class="screen">
+      <div class="reveal-card">
+        <div class="reveal-gift-icon">🎁</div>
+        <div class="reveal-kicker">YOUR SECRET GIFT</div>
+        <p id="revealDrawerLine" class="reveal-sub">คุณได้รับของขวัญจาก</p>
+
+        <h1 id="revealEmployeeName" class="reveal-employee-name">K.จินดา</h1>
+
+        <div id="revealFromCardPill" class="from-card-pill">
+          <span>✨ จากการ์ด A</span>
+        </div>
+
+        <!-- Next Turn Automatic Chain Box -->
+        <div id="nextTurnBox" class="next-turn-box">
+          <p id="nextTurnLabel" class="next-label">👉 คนต่อไปที่ต้องออกมาจับการ์ดคือ</p>
+          <p id="nextTurnPerson" class="next-person">K.จินดา</p>
+        </div>
+
+        <div class="reveal-actions">
+          <button id="btnNextTurnPrimary" class="btn-gold" onclick="proceedToNextDrawer()">
+            <span>👉</span>
+            <span id="btnNextTurnText">ส่งต่อให้ K.จินดา จับต่อเลย!</span>
+          </button>
+          <button class="btn-secondary" onclick="goHomeScreen()">
+            <span>กลับหน้าหลัก</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================
+         SCREEN 5: ALL 14 COMPLETED CELEBRATION SCREEN
+         ================================================= -->
+    <section id="screenSecret" class="screen">
+      <div class="secret-modal-card">
+        <div class="secret-emoji">🎉</div>
+        <p class="reveal-kicker">ALL DESTINIES COMPLETED</p>
+        <h2 style="font-size:1.65rem; margin-bottom:10px; color:#fff;">จับของขวัญครบทุกคนแล้ว!</h2>
+        <p style="color:#cbd5e1; font-size:0.95rem; line-height:1.6; margin-bottom:26px;">
+          ทุกคนได้รับของขวัญครบวงจรสมบูรณ์แบบ 🎁<br/>
+          ไม่มีใครจับได้ของตัวเอง และไม่มีวงจรขาดตอน!<br/>
+          <span style="color:var(--gold-light); font-size:0.88rem;">ขอให้มีความสุขและสนุกกับของขวัญปีใหม่นะครับ/นะคะ 🎄✨</span>
+        </p>
+
+        <button class="btn-gold" style="width:100%;" onclick="goHomeScreen()">
+          <span>🏠</span>
+          <span>กลับหน้าแรก</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- =================================================
+         SCREEN 6: ADMIN DASHBOARD
+         ================================================= -->
+    <section id="screenAdmin" class="screen">
+      <div class="admin-panel">
+        <div class="admin-header">
+          <div>
+            <p class="reveal-kicker" style="margin-bottom:2px;">SECURITY CONSOLE</p>
+            <h2 style="font-size:1.45rem; color:#fff;">NEW YEAR GIFT — ADMIN</h2>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-secondary" style="padding:8px 16px; font-size:0.85rem;" onclick="refreshAdminDashboard()">
+              🔄 รีเฟรช
+            </button>
+            <button class="btn-secondary" style="padding:8px 16px; font-size:0.85rem;" onclick="goHomeScreen()">
+              ✕ ปิดหน้า Admin
+            </button>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="admin-progress-box">
+          <div class="admin-progress-top">
+            <span id="adminChainInfoTxt" style="color:#cbd5e1;">สถานะการเปิดการ์ด (CARDS USED)</span>
+            <span id="adminUsedCountTxt" style="color:var(--gold-light); font-size:1.1rem;">0 / 14 CARDS USED</span>
+          </div>
+          <div class="admin-bar-bg">
+            <div id="adminBarFill" class="admin-bar-fill" style="width:0%;"></div>
+          </div>
+        </div>
+
+        <!-- 14 Cards Management Grid -->
+        <div id="adminCardsGrid" class="admin-cards-grid"></div>
+
+        <!-- Bulk Add / Quick Actions Toolbar -->
+        <div class="admin-toolbar">
+          <button class="btn-gold" style="padding:11px 22px; font-size:0.9rem;" onclick="adminShuffleBackend(true)">
+            🔀 สับเปลี่ยนชื่อเฉพาะการ์ดที่ยังว่าง (Shuffle Available)
+          </button>
+          <button class="btn-secondary" style="padding:11px 20px; font-size:0.9rem;" onclick="adminShuffleBackend(false)">
+            🎲 สุ่มจับคู่ใหม่ทั้งหมด 14 ใบ & รีเซ็ตเกม
+          </button>
+          <button class="btn-secondary" style="padding:11px 20px; font-size:0.9rem;" onclick="openBulkNamesPrompt()">
+            📝 แก้ไขรายชื่อ 14 คนรวดเดียว
+          </button>
+          <button class="btn-secondary" style="padding:11px 20px; font-size:0.9rem; border-color:#ef4444; color:#fca5a5;" onclick="adminResetAllConfirm()">
+            ♻️ Reset เริ่มเกมใหม่ทั้งหมด
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =================================================
+       MODAL: CIRCULAR SHUFFLE ANIMATION
+       ================================================= -->
+  <div id="shuffleOverlay" class="overlay-modal">
+    <div class="shuffle-ring">
+      <div id="orbitContainer" class="orbit-cards-container"></div>
+      <div style="font-size:2.4rem; color:var(--gold-light);">🔀</div>
+    </div>
+    <h3 id="shuffleTitleTxt" style="font-size:1.5rem; color:var(--gold-light); margin-bottom:6px;">กำลังสับไพ่…</h3>
+    <p id="shuffleSubTxt" style="color:#cbd5e1; font-size:0.95rem;">The cards are being shuffled · โชคชะตาของคุณกำลังหมุนเวียน</p>
+  </div>
+
+  <!-- =================================================
+       MODAL: ADMIN PASSWORD LOGIN
+       ================================================= -->
+  <div id="adminLoginModal" class="overlay-modal">
+    <div class="secret-modal-card" style="max-width:380px;">
+      <div style="font-size:2.6rem; margin-bottom:8px;">🔐</div>
+      <h3 style="font-size:1.3rem; margin-bottom:6px;">Admin Authentication</h3>
+      <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:18px;">
+        กรุณากรอกรหัสผ่านผู้ดูแลระบบเพื่อจัดการรายชื่อและสถานะการ์ด
+      </p>
+      <input
+        id="adminPassInput"
+        type="password"
+        class="admin-input"
+        placeholder="รหัสผ่าน Admin (ค่าเริ่มต้น: JCW2026)"
+        style="text-align:center; font-size:1rem; padding:12px; margin-bottom:16px;"
+        onkeydown="if(event.key==='Enter') submitAdminLogin()"
+      />
+      <div style="display:flex; gap:10px;">
+        <button class="btn-gold" style="flex:1; padding:12px;" onclick="submitAdminLogin()">เข้าสู่ระบบ</button>
+        <button class="btn-secondary" style="padding:12px 18px;" onclick="closeAdminModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================
+       MODAL: BULK 14 EMPLOYEE NAMES
+       ================================================= -->
+  <div id="bulkNamesModal" class="overlay-modal">
+    <div class="secret-modal-card" style="max-width:460px; text-align:left;">
+      <h3 style="font-size:1.25rem; margin-bottom:6px; color:var(--gold-light);">📝 กำหนดรายชื่อผู้เข้าร่วม 14 คน (I–XIV)</h3>
+      <p style="font-size:0.82rem; color:#cbd5e1; margin-bottom:12px;">
+        พิมพ์ชื่อบรรทัดละ 1 ชื่อ (เรียงตามการ์ด I ถึง XIV):
+      </p>
+      <textarea
+        id="bulkNamesTextarea"
+        rows="14"
+        class="admin-input"
+        style="font-family:var(--font-sans); line-height:1.5; margin-bottom:14px;"
+        placeholder="K.จินดา&#10;K.จ้ำ&#10;K.เพียว..."
+      ></textarea>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-gold" style="flex:1; padding:11px;" onclick="saveBulkNames()">บันทึกรายชื่อทั้งหมด</button>
+        <button class="btn-secondary" style="padding:11px 18px;" onclick="closeBulkNamesModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastBox" class="toast-box"></div>
+
+  <script>
+    /* ==========================================================
+       1. CARD THEMES METADATA (ROMAN I - XIV, 14 CARDS)
+       ========================================================== */
+    const CARD_THEMES = {
+      'I': {
+        name: 'Christmas Tree',
+        grad: 'linear-gradient(145deg, #991b1b 0%, #450a0a 100%)',
+        glow: 'rgba(239, 68, 68, 0.55)',
+        whisper: '🎄 ต้นคริสต์มาสแห่งความสุขกำลังรอคุณ...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="32,8 14,30 24,30 10,48 54,48 40,30 50,30" fill="rgba(254,240,138,0.15)"/><rect x="28" y="48" width="8" height="8" fill="#fef08a"/><circle cx="32" cy="6" r="2.5" fill="#fef08a"/></svg>`
+      },
+      'II': {
+        name: 'Gift',
+        grad: 'linear-gradient(145deg, #065f46 0%, #022c22 100%)',
+        glow: 'rgba(16, 185, 129, 0.55)',
+        whisper: '🎁 กล่องของขวัญปริศนาซ่อนชื่อใครอยู่นะ...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="12" y="26" width="40" height="28" rx="3" fill="rgba(254,240,138,0.15)"/><rect x="8" y="18" width="48" height="8" rx="2"/><line x1="32" y1="18" x2="32" y2="54"/><path d="M32,18 C24,18 20,10 26,10 C30,10 32,18 32,18 Z"/><path d="M32,18 C40,18 44,10 38,10 C34,10 32,18 32,18 Z"/></svg>`
+      },
+      'III': {
+        name: 'Star',
+        grad: 'linear-gradient(145deg, #1e3a8a 0%, #0f172a 100%)',
+        glow: 'rgba(59, 130, 246, 0.55)',
+        whisper: '⭐ ดวงดาวนำทางแห่งโชคชะตา...',
+        svg: `<svg viewBox="0 0 64 64" fill="rgba(254,240,138,0.22)" stroke="#fef08a" stroke-width="2.5" stroke-linejoin="round"><polygon points="32,8 39,24 56,26 43,38 47,55 32,46 17,55 21,38 8,26 25,24"/></svg>`
+      },
+      'IV': {
+        name: 'Snowflake',
+        grad: 'linear-gradient(145deg, #0284c7 0%, #0c4a6e 100%)',
+        glow: 'rgba(56, 189, 248, 0.6)',
+        whisper: '❄️ เกล็ดหิมะแรกของปีใหม่...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round"><line x1="32" y1="8" x2="32" y2="56"/><line x1="8" y1="32" x2="56" y2="32"/><line x1="15" y1="15" x2="49" y2="49"/><line x1="49" y1="15" x2="15" y2="49"/><circle cx="32" cy="32" r="5" fill="rgba(254,240,138,0.2)"/></svg>`
+      },
+      'V': {
+        name: 'Reindeer',
+        grad: 'linear-gradient(145deg, #581c87 0%, #2e1065 100%)',
+        glow: 'rgba(168, 85, 247, 0.55)',
+        whisper: '🦌 กวางเรนเดียร์พร้อมส่งมอบความสุข...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="38" r="12" fill="rgba(254,240,138,0.15)"/><circle cx="32" cy="41" r="3" fill="#fef08a"/><path d="M24,28 C18,22 14,14 16,10 M16,18 L10,16 M19,22 L23,16"/><path d="M40,28 C46,22 50,14 48,10 M48,18 L54,16 M45,22 L41,16"/></svg>`
+      },
+      'VI': {
+        name: 'Bell',
+        grad: 'linear-gradient(145deg, #92400e 0%, #451a03 100%)',
+        glow: 'rgba(245, 158, 11, 0.6)',
+        whisper: '🔔 เสียงระฆังฉลองค่ำคืนพิเศษ...',
+        svg: `<svg viewBox="0 0 64 64" fill="rgba(254,240,138,0.18)" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18,44 C18,26 22,16 32,16 C42,16 46,26 46,44 L52,48 L12,48 L18,44 Z"/><circle cx="32" cy="52" r="4" fill="#fef08a"/><circle cx="32" cy="12" r="3"/></svg>`
+      },
+      'VII': {
+        name: 'Santa',
+        grad: 'linear-gradient(145deg, #be123c 0%, #4c0519 100%)',
+        glow: 'rgba(244, 63, 94, 0.6)',
+        whisper: '🎅 หมวกซานต้าแห่งความลับ...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14,44 C16,24 28,14 46,18 C46,18 42,30 48,44" fill="rgba(254,240,138,0.18)"/><rect x="10" y="42" width="40" height="10" rx="5" fill="rgba(255,255,255,0.25)"/><circle cx="50" cy="18" r="5" fill="#fef08a"/></svg>`
+      },
+      'VIII': {
+        name: 'Gingerbread',
+        grad: 'linear-gradient(145deg, #7c2d12 0%, #3b0764 100%)',
+        glow: 'rgba(249, 115, 22, 0.55)',
+        whisper: '🍪 รอยยิ้มแสนอบอุ่นกำลังรออยู่...',
+        svg: `<svg viewBox="0 0 64 64" fill="rgba(254,240,138,0.15)" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="18" r="9"/><path d="M14,30 L24,30 L22,52 L29,52 L32,42 L35,52 L42,52 L40,30 L50,30"/><circle cx="32" cy="34" r="1.5" fill="#fef08a"/><circle cx="32" cy="39" r="1.5" fill="#fef08a"/></svg>`
+      },
+      'IX': {
+        name: 'Candle',
+        grad: 'linear-gradient(145deg, #115e59 0%, #042f2e 100%)',
+        glow: 'rgba(45, 212, 191, 0.55)',
+        whisper: '🕯️ แสงเทียนแห่งความปรารถนาดี...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="24" y="28" width="16" height="24" rx="2" fill="rgba(254,240,138,0.16)"/><path d="M32,10 C32,10 38,17 35,22 C33,25 30,25 29,22 C26,17 32,10 32,10 Z" fill="#fef08a"/><line x1="16" y1="52" x2="48" y2="52"/></svg>`
+      },
+      'X': {
+        name: 'Ribbon',
+        grad: 'linear-gradient(145deg, #9d174d 0%, #500724 100%)',
+        glow: 'rgba(236, 72, 153, 0.55)',
+        whisper: '🎀 ริบบิ้นผูกมิตรภาพสุดพิเศษ...',
+        svg: `<svg viewBox="0 0 64 64" fill="rgba(254,240,138,0.18)" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M32,28 C20,14 10,20 14,30 C18,38 28,32 32,28 Z"/><path d="M32,28 C44,14 54,20 50,30 C46,38 36,32 32,28 Z"/><path d="M28,31 L18,52 L26,49 L30,54 L32,32"/><path d="M36,31 L46,52 L38,49 L34,54 L32,32"/><circle cx="32" cy="28" r="4" fill="#fef08a"/></svg>`
+      },
+      'XI': {
+        name: 'Celebration',
+        grad: 'linear-gradient(145deg, #1e40af 0%, #172554 100%)',
+        glow: 'rgba(96, 165, 250, 0.55)',
+        whisper: '🥂 เฉลิมฉลองค่ำคืนแห่งความทรงจำ...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18,14 L28,14 L26,32 C26,36 22,38 20,36 C17,34 17,28 18,14 Z" fill="rgba(254,240,138,0.18)"/><path d="M46,14 L36,14 L38,32 C38,36 42,38 44,36 C47,34 47,28 46,14 Z" fill="rgba(254,240,138,0.18)"/><line x1="21" y1="37" x2="17" y2="50"/><line x1="43" y1="37" x2="47" y2="50"/><line x1="12" y1="50" x2="22" y2="50"/><line x1="42" y1="50" x2="52" y2="50"/><circle cx="32" cy="10" r="2" fill="#fef08a"/></svg>`
+      },
+      'XII': {
+        name: 'Magic Star',
+        grad: 'linear-gradient(145deg, #4c1d95 0%, #1e1b4b 100%)',
+        glow: 'rgba(192, 132, 252, 0.6)',
+        whisper: '✨ ดวงดาวเวทมนตร์แห่งความโชคดี...',
+        svg: `<svg viewBox="0 0 64 64" fill="none" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round"><path d="M32,8 L36,28 L56,32 L36,36 L32,56 L28,36 L8,32 L28,28 Z" fill="rgba(254,240,138,0.22)"/><line x1="16" y1="16" x2="48" y2="48"/><line x1="48" y1="16" x2="16" y2="48"/></svg>`
+      },
+      'XIII': {
+        name: 'Royal Crown',
+        grad: 'linear-gradient(145deg, #854d0e 0%, #422006 100%)',
+        glow: 'rgba(250, 204, 21, 0.65)',
+        whisper: '👑 มงกุฎทองคำแห่งเกียรติยศ...',
+        svg: `<svg viewBox="0 0 64 64" fill="rgba(254,240,138,0.2)" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="10,46 14,22 26,34 32,16 38,34 50,22 54,46"/><rect x="10" y="46" width="44" height="6" rx="2"/><circle cx="14" cy="18" r="2" fill="#fef08a"/><circle cx="32" cy="12" r="2.5" fill="#fef08a"/><circle cx="50" cy="18" r="2" fill="#fef08a"/></svg>`
+      },
+      'XIV': {
+        name: 'Lucky Diamond',
+        grad: 'linear-gradient(145deg, #0f766e 0%, #1e1b4b 100%)',
+        glow: 'rgba(45, 212, 191, 0.65)',
+        whisper: '💎 อัญมณีล้ำค่าใบที่ 14...',
+        svg: `<svg viewBox="0 0 64 64" fill="rgba(254,240,138,0.18)" stroke="#fef08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="20,14 44,14 54,26 32,52 10,26"/><line x1="10" y1="26" x2="54" y2="26"/><polyline points="20,14 26,26 32,52 38,26 44,14"/></svg>`
+      }
+    };
+
+    /* ==========================================================
+       2. STATE MANAGEMENT & SMART CHAIN TRACKER
+       ========================================================== */
+    let publicCards = [];         // [{ card_id, card_letter, theme, status }]
+    let displayOrder = [];        // UI order of Roman numerals ['I'..'XIV']
+    let chainState = {
+      allParticipants: [
+        'K.จินดา', 'K.จ้ำ', 'K.เพียว', 'K.นุ๊ก', 'K.อาร์ม', 'K.ชิต',
+        'K.ซัน', 'K.พี', 'K.ฟ้า', 'K.บู๊ทธ์', 'K.เจ',
+        'ผู้เข้าร่วมงาน 1', 'ผู้เข้าร่วมงาน 2', 'ผู้เข้าร่วมงาน 3'
+      ],
+      chainStarter: 'K.จินดา',
+      currentDrawer: 'K.จินดา',
+      usedCount: 0,
+      totalCount: 14,
+      isFinished: false
+    };
+    let selectedCardLetter = null;
+    let lastRevealedCard = null;
+    let isOpeningCard = false;
+    let soundEnabled = true;
+    let adminPasswordCache = '';
+    let adminCardsData = [];
+
+    // Local demo fallback ONLY when opened outside Google Apps Script
+    let localFallbackMapping = {
+      'I':    'K.จินดา',
+      'II':   'K.จ้ำ',
+      'III':  'K.เพียว',
+      'IV':   'K.นุ๊ก',
+      'V':    'K.อาร์ม',
+      'VI':   'K.ชิต',
+      'VII':  'K.ซัน',
+      'VIII': 'K.พี',
+      'IX':   'K.ฟ้า',
+      'X':    'K.บู๊ทธ์',
+      'XI':   'K.เจ',
+      'XII':  'ผู้เข้าร่วมงาน 1',
+      'XIII': 'ผู้เข้าร่วมงาน 2',
+      'XIV':  'ผู้เข้าร่วมงาน 3'
+    };
+    let localDrawnByMap = {}; // letter -> drawn_by
+
+    const isGasEnvironment = (typeof google !== 'undefined' && google.script && google.script.run);
+
+    /* ==========================================================
+       3. WEB AUDIO API SYNTHESIZER
+       ========================================================== */
+    let audioCtx = null;
+
+    function getAudioCtx() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) audioCtx = new AudioContextClass();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function playSound(type) {
+      if (!soundEnabled) return;
+      try {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+
+        if (type === 'hover') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(680, now);
+          osc.frequency.exponentialRampToValueAtTime(920, now + 0.045);
+          gain.gain.setValueAtTime(0.035, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.055);
+        } else if (type === 'click') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(520, now);
+          osc.frequency.exponentialRampToValueAtTime(1040, now + 0.09);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.1);
+        } else if (type === 'shuffle') {
+          for (let i = 0; i < 8; i++) {
+            const t = now + i * 0.12;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(300 + i * 55, t);
+            osc.frequency.exponentialRampToValueAtTime(600 + i * 70, t + 0.08);
+            gain.gain.setValueAtTime(0.05, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.095);
+          }
+        } else if (type === 'whoosh') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(180, now);
+          osc.frequency.exponentialRampToValueAtTime(880, now + 0.45);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.52);
+        } else if (type === 'chime') {
+          const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+          notes.forEach((freq, idx) => {
+            const t = now + idx * 0.09;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0.11, t);
+            gain.gain.exponentialRampToValueAtTime(0.0008, t + 0.85);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.9);
+          });
+        }
+      } catch (e) {}
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      const btn = document.getElementById('soundBtn');
+      document.getElementById('soundIcon').textContent = soundEnabled ? '🔊' : '🔇';
+      document.getElementById('soundLabel').textContent = soundEnabled ? 'Sound ON' : 'Sound OFF';
+      btn.classList.toggle('active-sound', soundEnabled);
+      if (soundEnabled) playSound('click');
+    }
+
+    /* ==========================================================
+       4. INITIALIZATION & BACKEND SYNC
+       ========================================================== */
+    window.addEventListener('DOMContentLoaded', () => {
+      initSnowParticles();
+      fetchPublicCards();
+    });
+
+    function fetchPublicCards(callback) {
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.ok && Array.isArray(res.cards)) {
+              publicCards = res.cards;
+              if (res.chain) {
+                chainState = res.chain;
+                if (!chainState.currentDrawer && chainState.usedCount === 0 && chainState.allParticipants.length > 0) {
+                  chainState.currentDrawer = chainState.allParticipants[0];
+                  chainState.chainStarter = chainState.allParticipants[0];
+                }
+              }
+              if (displayOrder.length === 0) {
+                displayOrder = publicCards.map(c => c.card_letter);
+              }
+              renderTurnBanner();
+              renderCardsBoard(false);
+              if (callback) callback();
+            }
+          })
+          .withFailureHandler(() => {
+            showToast('ไม่สามารถโหลดข้อมูลการ์ด กรุณารีเฟรชหน้าเว็บ');
+          })
+          .getPublicCards();
+      } else {
+        // Local preview mode
+        publicCards = Object.keys(CARD_THEMES).map((letter, idx) => ({
+          card_id: idx + 1,
+          card_letter: letter,
+          theme: CARD_THEMES[letter].name,
+          status: localDrawnByMap[letter] ? 'LOCKED' : 'AVAILABLE'
+        }));
+        if (displayOrder.length === 0) {
+          displayOrder = publicCards.map(c => c.card_letter);
+        }
+        renderTurnBanner();
+        renderCardsBoard(false);
+        if (callback) callback();
+      }
+    }
+
+    /* ==========================================================
+       5. TURN BANNER & FIRST STARTER SELECTION
+       ========================================================== */
+    function renderTurnBanner() {
+      const kickerEl = document.getElementById('turnStepKicker');
+      const playerEl = document.getElementById('turnPlayerDisplay');
+      const pickerBox = document.getElementById('starterPickerBox');
+      const selectEl = document.getElementById('starterSelect');
+
+      const turnNum = Math.min(chainState.totalCount || 14, (chainState.usedCount || 0) + 1);
+
+      if (chainState.isFinished) {
+        kickerEl.textContent = `COMPLETED · เปิดครบทั้ง ${chainState.totalCount} ใบแล้ว`;
+        playerEl.innerHTML = `🎉 จับของขวัญครบทุกคนแล้ว!`;
+        pickerBox.style.display = 'none';
+        return;
+      }
+
+      if (chainState.usedCount === 0) {
+        kickerEl.textContent = `TURN 1 / ${chainState.totalCount} · เลือกคนเริ่มเปิดคนแรก`;
+        const current = chainState.currentDrawer || chainState.allParticipants[0] || 'K.จินดา';
+        chainState.currentDrawer = current;
+        chainState.chainStarter = current;
+        playerEl.innerHTML = `คิวเปิดการ์ด: <span style="color:var(--gold-light);">${escapeHtml(current)}</span>`;
+
+        pickerBox.style.display = 'flex';
+        selectEl.innerHTML = chainState.allParticipants.map(name =>
+          `<option value="${escapeHtml(name)}" ${name === current ? 'selected' : ''}>เริ่มที่: ${escapeHtml(name)}</option>`
+        ).join('');
+      } else {
+        kickerEl.textContent = `TURN ${turnNum} / ${chainState.totalCount} · คนเริ่มคนแรก: ${chainState.chainStarter}`;
+        playerEl.innerHTML = `คิวเปิดการ์ด: <span style="color:var(--gold-light);">${escapeHtml(chainState.currentDrawer)}</span>`;
+        pickerBox.style.display = 'none';
+      }
+    }
+
+    function onChangeStarterSelect(newStarter) {
+      playSound('click');
+      chainState.currentDrawer = newStarter;
+      chainState.chainStarter = newStarter;
+      renderTurnBanner();
+      if (isGasEnvironment) {
+        google.script.run.setFirstDrawer(newStarter);
+      }
+      showToast(`🎯 ตั้งค่าคนเริ่มจับคนแรกเป็น ${newStarter}`);
+    }
+
+    function pickRandomStarter() {
+      playSound('shuffle');
+      const list = chainState.allParticipants;
+      if (!list || list.length === 0) return;
+      const randomPerson = list[Math.floor(Math.random() * list.length)];
+      onChangeStarterSelect(randomPerson);
+    }
+
+    /* ==========================================================
+       6. NAVIGATION & SCREEN TRANSITIONS
+       ========================================================== */
+    function switchScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+      const target = document.getElementById(screenId);
+      if (target) target.classList.add('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function goHomeScreen() {
+      playSound('click');
+      switchScreen('screenWelcome');
+    }
+
+    function startGameFlow() {
+      playSound('click');
+      fetchPublicCards(() => {
+        switchScreen('screenBoard');
+        renderCardsBoard(true);
+      });
+    }
+
+    /* ==========================================================
+       7. RENDER 14 CARDS BOARD (AVAILABLE TOP, USED/LOCKED BOTTOM)
+       ========================================================== */
+    function renderCardsBoard(animateFlyIn = false) {
+      const grid = document.getElementById('cardsGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      const cardMap = {};
+      publicCards.forEach(c => { cardMap[c.card_letter] = c; });
+
+      const availableCount = publicCards.filter(c => c.status === 'AVAILABLE').length;
+      document.getElementById('availableCountTxt').textContent = `ว่าง ${availableCount} / ${publicCards.length || 14} ใบ`;
+
+      // Always sort AVAILABLE cards to the top, and USED/LOCKED cards to the bottom!
+      const availableLetters = [];
+      const lockedLetters = [];
+      displayOrder.forEach(letter => {
+        const cardObj = cardMap[letter] || { card_letter: letter, status: 'AVAILABLE' };
+        if (cardObj.status === 'AVAILABLE') {
+          availableLetters.push(letter);
+        } else {
+          lockedLetters.push(letter);
+        }
+      });
+      displayOrder = [...availableLetters, ...lockedLetters];
+
+      displayOrder.forEach((letter, idx) => {
+        const cardObj = cardMap[letter] || { card_letter: letter, status: 'AVAILABLE' };
+        const themeMeta = CARD_THEMES[letter] || CARD_THEMES['I'];
+        const isLocked = cardObj.status !== 'AVAILABLE';
+
+        const cardEl = document.createElement('div');
+        cardEl.className = `tarot-card ${isLocked ? 'is-locked' : ''}`;
+        cardEl.style.setProperty('--theme-grad', themeMeta.grad);
+        cardEl.style.setProperty('--theme-glow', themeMeta.glow);
+
+        cardEl.innerHTML = `
+          <div class="card-face">
+            <span class="card-corner-tl">✦</span>
+            <span class="card-corner-br">✦</span>
+            <div class="card-letter">${letter}</div>
+            <div class="card-icon-svg">${themeMeta.svg}</div>
+            <div class="card-theme-label">${themeMeta.name}</div>
+            ${isLocked ? `
+              <div class="locked-overlay">
+                <div style="font-size:1.3rem;">🔒</div>
+                <span class="locked-badge">USED ✓</span>
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        if (!isLocked) {
+          cardEl.addEventListener('mouseenter', () => {
+            playSound('hover');
+            document.getElementById('hoverWhisper').textContent = themeMeta.whisper || 'Something is waiting for you...';
+          });
+          cardEl.addEventListener('mouseleave', () => {
+            document.getElementById('hoverWhisper').textContent = '✨ Something magical is waiting for you...';
+          });
+          cardEl.addEventListener('click', () => selectCardFromBoard(letter));
+        } else {
+          cardEl.addEventListener('click', () => {
+            showToast(`การ์ด ${letter} ถูกเปิดและล็อกไปแล้ว 🔒`);
+          });
+        }
+
+        grid.appendChild(cardEl);
+
+        if (animateFlyIn) {
+          setTimeout(() => {
+            cardEl.classList.add('fly-in');
+          }, idx * 55);
+        } else {
+          cardEl.classList.add('fly-in');
+        }
+      });
+    }
+
+    /* ==========================================================
+       8. UI SHUFFLE FEATURE (VISUAL ONLY — SHUFFLES AVAILABLE AT TOP)
+       ========================================================== */
+    function triggerShuffleUI() {
+      playSound('shuffle');
+      const overlay = document.getElementById('shuffleOverlay');
+      const orbitContainer = document.getElementById('orbitContainer');
+      orbitContainer.innerHTML = '';
+
+      const cardMap = {};
+      publicCards.forEach(c => { cardMap[c.card_letter] = c; });
+
+      const availableLetters = displayOrder.filter(l => !cardMap[l] || cardMap[l].status === 'AVAILABLE');
+      const lockedLetters = displayOrder.filter(l => cardMap[l] && cardMap[l].status !== 'AVAILABLE');
+
+      const sampleLetters = (availableLetters.length > 0 ? availableLetters : displayOrder).slice(0, 8);
+      sampleLetters.forEach((ltr, idx) => {
+        const angle = (idx / sampleLetters.length) * Math.PI * 2;
+        const radius = 102;
+        const x = Math.cos(angle) * radius + 130 - 24;
+        const y = Math.sin(angle) * radius + 130 - 33;
+        const mini = document.createElement('div');
+        mini.className = 'mini-orbit-card';
+        mini.style.left = `${x}px`;
+        mini.style.top = `${y}px`;
+        mini.textContent = ltr;
+        orbitContainer.appendChild(mini);
+      });
+
+      document.getElementById('shuffleTitleTxt').textContent = 'กำลังสับไพ่…';
+      document.getElementById('shuffleSubTxt').textContent = 'โชคชะตาของคุณกำลังหมุนเวียน...';
+      overlay.classList.add('active');
+
+      // Shuffle ONLY the available cards, keeping locked cards at the bottom
+      for (let i = availableLetters.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = availableLetters[i];
+        availableLetters[i] = availableLetters[j];
+        availableLetters[j] = temp;
+      }
+      displayOrder = [...availableLetters, ...lockedLetters];
+
+      setTimeout(() => {
+        document.getElementById('shuffleTitleTxt').textContent = '✨ The cards have been shuffled.';
+        document.getElementById('shuffleSubTxt').textContent = 'เลือกไพ่ที่ดึงดูดใจคุณมากที่สุด!';
+      }, 950);
+
+      setTimeout(() => {
+        overlay.classList.remove('active');
+        renderCardsBoard(true);
+        showToast('🔀 สับเปลี่ยนตำแหน่งไพ่เรียบร้อยแล้ว!');
+      }, 1550);
+    }
+
+    /* ==========================================================
+       9. CARD SELECTION FOCUS & 3D FLIP REVEAL (ANTI-LOOP CHAIN)
+       ========================================================== */
+    function selectCardFromBoard(letter) {
+      if (isOpeningCard) return;
+      if (chainState.isFinished) {
+        showToast('จับของขวัญครบทุกใบแล้ว!');
+        return;
+      }
+      playSound('click');
+      selectedCardLetter = letter;
+      const themeMeta = CARD_THEMES[letter] || CARD_THEMES['I'];
+
+      document.getElementById('focusDrawerBadge').textContent = `🎯 คิวเปิดของ: ${chainState.currentDrawer}`;
+      document.getElementById('focusLetterHeading').textContent = letter;
+      document.getElementById('bigCardLetter').textContent = letter;
+      document.getElementById('bigCardIcon').innerHTML = themeMeta.svg;
+      document.getElementById('bigCardTheme').textContent = themeMeta.name;
+
+      const bigFace = document.getElementById('bigCardFace');
+      bigFace.style.background = themeMeta.grad;
+
+      const bigCard3D = document.getElementById('bigCard3D');
+      bigCard3D.classList.remove('shaking', 'flipping-3d');
+      document.getElementById('focusBtnGroup').style.display = 'flex';
+      document.getElementById('destinyProgress').classList.remove('active');
+      document.getElementById('destinyBarFill').style.width = '0%';
+
+      switchScreen('screenFocus');
+    }
+
+    function cancelCardFocus() {
+      if (isOpeningCard) return;
+      playSound('click');
+      selectedCardLetter = null;
+      switchScreen('screenBoard');
+    }
+
+    function confirmOpenCard() {
+      if (!selectedCardLetter || isOpeningCard) return;
+      isOpeningCard = true;
+      playSound('whoosh');
+
+      const letter = selectedCardLetter;
+      const activeDrawer = chainState.currentDrawer;
+      const bigCard3D = document.getElementById('bigCard3D');
+      const progressWrap = document.getElementById('destinyProgress');
+      const barFill = document.getElementById('destinyBarFill');
+      const statusTxt = document.getElementById('destinyStatusTxt');
+
+      document.getElementById('focusBtnGroup').style.display = 'none';
+      progressWrap.classList.add('active');
+      statusTxt.textContent = 'กำลังค้นหาชะตาของคุณ…';
+
+      bigCard3D.classList.add('shaking');
+
+      let pct = 0;
+      const timer = setInterval(() => {
+        pct = Math.min(92, pct + 8);
+        barFill.style.width = pct + '%';
+      }, 120);
+
+      setTimeout(() => {
+        bigCard3D.classList.remove('shaking');
+        bigCard3D.classList.add('flipping-3d');
+      }, 500);
+
+      const handleRevealResponse = (res) => {
+        clearInterval(timer);
+        if (!res || !res.ok) {
+          isOpeningCard = false;
+          bigCard3D.classList.remove('shaking', 'flipping-3d');
+          showToast((res && res.message) || 'การ์ดนี้ถูกเลือกไปแล้ว กรุณาเลือกใบอื่น');
+          fetchPublicCards(() => switchScreen('screenBoard'));
+          return;
+        }
+
+        if (res.chain) {
+          chainState = res.chain;
+        }
+
+        barFill.style.width = '100%';
+        statusTxt.textContent = '✨ Destiny found…';
+
+        const burst = document.getElementById('lightBurst');
+        burst.classList.remove('flash');
+        void burst.offsetWidth;
+        burst.classList.add('flash');
+
+        playSound('chime');
+
+        setTimeout(() => {
+          isOpeningCard = false;
+          showRevealScreen(res.card);
+        }, 450);
+      };
+
+      if (isGasEnvironment) {
+        setTimeout(() => {
+          google.script.run
+            .withSuccessHandler(handleRevealResponse)
+            .withFailureHandler(() => {
+              clearInterval(timer);
+              isOpeningCard = false;
+              showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองอีกครั้ง');
+              switchScreen('screenBoard');
+            })
+            .openAndLockCard(letter, activeDrawer);
+        }, 1250);
+      } else {
+        // Local Preview mode with identical Anti-Loop Single Cycle Engine!
+        setTimeout(() => {
+          const availableLetters = Object.keys(CARD_THEMES).filter(l => !localDrawnByMap[l]);
+          if (availableLetters.indexOf(letter) === -1) {
+            handleRevealResponse({ ok: false, message: 'การ์ดใบนี้ถูกเปิดไปแล้ว' });
+            return;
+          }
+
+          if (chainState.usedCount === 0) {
+            chainState.chainStarter = activeDrawer;
+          }
+
+          const remainingCount = availableLetters.length;
+          const alreadyDrawnSet = { [activeDrawer]: true };
+          Object.values(localDrawnByMap).forEach(d => { alreadyDrawnSet[d] = true; });
+
+          const isValidCandidate = (cand) => {
+            if (cand === activeDrawer) return false;
+            if (remainingCount > 1) {
+              if (cand === chainState.chainStarter) return false;
+              if (alreadyDrawnSet[cand]) return false;
+            }
+            return true;
+          };
+
+          if (!isValidCandidate(localFallbackMapping[letter])) {
+            const validSwapLetters = availableLetters.filter(
+              l => l !== letter && isValidCandidate(localFallbackMapping[l])
+            );
+            if (validSwapLetters.length > 0) {
+              const swapLtr = validSwapLetters[Math.floor(Math.random() * validSwapLetters.length)];
+              const tmp = localFallbackMapping[letter];
+              localFallbackMapping[letter] = localFallbackMapping[swapLtr];
+              localFallbackMapping[swapLtr] = tmp;
+            }
+          }
+
+          const revealedOwner = localFallbackMapping[letter];
+          localDrawnByMap[letter] = activeDrawer;
+
+          const isFinal = (remainingCount === 1);
+          chainState.usedCount += 1;
+          chainState.isFinished = isFinal;
+          chainState.currentDrawer = isFinal ? '' : revealedOwner;
+
+          handleRevealResponse({
+            ok: true,
+            card: {
+              card_letter: letter,
+              employee_name: revealedOwner,
+              drawn_by: activeDrawer,
+              next_drawer: isFinal ? '' : revealedOwner,
+              is_final_card: isFinal,
+              chain_starter: chainState.chainStarter,
+              status: 'LOCKED'
+            },
+            chain: chainState
+          });
+        }, 1500);
+      }
+    }
+
+    function showRevealScreen(cardData) {
+      lastRevealedCard = cardData;
+      const drawer = cardData.drawn_by || '';
+      const giftOwner = cardData.employee_name || '';
+
+      document.getElementById('revealDrawerLine').innerHTML =
+        `<strong style="color:var(--gold-light);">${escapeHtml(drawer)}</strong> ได้รับของขวัญจาก`;
+      document.getElementById('revealEmployeeName').textContent = giftOwner;
+      document.getElementById('revealFromCardPill').innerHTML = `<span>✨ จากการ์ด ${cardData.card_letter}</span>`;
+
+      const nextLabel = document.getElementById('nextTurnLabel');
+      const nextPerson = document.getElementById('nextTurnPerson');
+      const btnNextText = document.getElementById('btnNextTurnText');
+
+      if (cardData.is_final_card) {
+        nextLabel.textContent = `🎉 ใบสุดท้ายครบวงจร ${chainState.totalCount || 14} คนสมบูรณ์แบบ!`;
+        nextPerson.textContent = `ครบรอบกลับไปหาคนแรก (${giftOwner}) พอดี!`;
+        btnNextText.textContent = '🎉 ดูสรุปจบเกม';
+      } else {
+        nextLabel.textContent = '👉 คนต่อไปที่ต้องออกมาจับการ์ดคือ';
+        nextPerson.textContent = `${giftOwner}`;
+        btnNextText.textContent = `ส่งต่อให้ "${giftOwner}" จับต่อเลย!`;
+      }
+
+      switchScreen('screenReveal');
+      launchConfettiCelebration();
+      fetchPublicCards();
+    }
+
+    function proceedToNextDrawer() {
+      playSound('click');
+      if (lastRevealedCard && lastRevealedCard.is_final_card) {
+        launchConfettiCelebration();
+        switchScreen('screenSecret');
+        return;
+      }
+      fetchPublicCards(() => {
+        switchScreen('screenBoard');
+        renderTurnBanner();
+        renderCardsBoard(false);
+        if (chainState.currentDrawer) {
+          showToast(`🎯 ถึงคิวของ ${chainState.currentDrawer} เลือกเปิดการ์ดได้เลย!`);
+        }
+      });
+    }
+
+    /* ==========================================================
+       10. ADMIN DASHBOARD FUNCTIONS
+       ========================================================== */
+    function openAdminModal() {
+      playSound('click');
+      if (adminPasswordCache) {
+        refreshAdminDashboard();
+        return;
+      }
+      document.getElementById('adminPassInput').value = '';
+      document.getElementById('adminLoginModal').classList.add('active');
+      setTimeout(() => document.getElementById('adminPassInput').focus(), 100);
+    }
+
+    function closeAdminModal() {
+      document.getElementById('adminLoginModal').classList.remove('active');
+    }
+
+    function submitAdminLogin() {
+      const pass = document.getElementById('adminPassInput').value.trim();
+      if (!pass) {
+        showToast('กรุณากรอกรหัสผ่าน Admin');
+        return;
+      }
+
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (!res || !res.ok) {
+              showToast((res && res.message) || 'รหัสผ่านไม่ถูกต้อง');
+              return;
+            }
+            adminPasswordCache = pass;
+            closeAdminModal();
+            if (res.chain) chainState = res.chain;
+            renderAdminDashboard(res.cards);
+            switchScreen('screenAdmin');
+          })
+          .adminGetDashboard(pass);
+      } else {
+        if (pass !== 'JCW2026') {
+          showToast('รหัสผ่านไม่ถูกต้อง (ค่าเริ่มต้น: JCW2026)');
+          return;
+        }
+        adminPasswordCache = pass;
+        closeAdminModal();
+        const demoAdminCards = Object.keys(CARD_THEMES).map((ltr, idx) => ({
+          card_id: idx + 1,
+          card_letter: ltr,
+          theme: CARD_THEMES[ltr].name,
+          employee_name: localFallbackMapping[ltr] || '',
+          drawn_by: localDrawnByMap[ltr] || '',
+          status: localDrawnByMap[ltr] ? 'LOCKED' : 'AVAILABLE'
+        }));
+        renderAdminDashboard(demoAdminCards);
+        switchScreen('screenAdmin');
+      }
+    }
+
+    function refreshAdminDashboard() {
+      if (!adminPasswordCache) {
+        openAdminModal();
+        return;
+      }
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.ok) {
+              if (res.chain) chainState = res.chain;
+              renderAdminDashboard(res.cards);
+              switchScreen('screenAdmin');
+              showToast('อัปเดตข้อมูล Admin ล่าสุดแล้ว');
+            }
+          })
+          .adminGetDashboard(adminPasswordCache);
+      } else {
+        const demoAdminCards = Object.keys(CARD_THEMES).map((ltr, idx) => ({
+          card_id: idx + 1,
+          card_letter: ltr,
+          theme: CARD_THEMES[ltr].name,
+          employee_name: localFallbackMapping[ltr] || '',
+          drawn_by: localDrawnByMap[ltr] || '',
+          status: localDrawnByMap[ltr] ? 'LOCKED' : 'AVAILABLE'
+        }));
+        renderAdminDashboard(demoAdminCards);
+        switchScreen('screenAdmin');
+      }
+    }
+
+    function renderAdminDashboard(cards) {
+      adminCardsData = cards || [];
+      const usedCount = adminCardsData.filter(c => c.status !== 'AVAILABLE').length;
+      const total = adminCardsData.length || 14;
+      const pct = Math.round((usedCount / total) * 100);
+
+      document.getElementById('adminUsedCountTxt').textContent = `${usedCount} / ${total} CARDS USED`;
+      document.getElementById('adminBarFill').style.width = `${pct}%`;
+
+      const chainTxt = chainState.currentDrawer
+        ? `คิวปัจจุบัน: ${chainState.currentDrawer} (คนเริ่มแรก: ${chainState.chainStarter || '-'})`
+        : 'สถานะการเปิดการ์ด (CARDS USED)';
+      document.getElementById('adminChainInfoTxt').textContent = chainTxt;
+
+      const grid = document.getElementById('adminCardsGrid');
+      grid.innerHTML = '';
+
+      adminCardsData.forEach(card => {
+        const isLocked = card.status !== 'AVAILABLE';
+        const item = document.createElement('div');
+        item.className = `admin-card-item ${isLocked ? 'used' : ''}`;
+        item.innerHTML = `
+          <div class="admin-row-top">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="admin-letter-badge">${card.card_letter}</span>
+              <span style="font-size:0.78rem; color:#94a3b8;">
+                ${card.drawn_by ? `คนจับ: <strong style="color:#fef08a;">${escapeHtml(card.drawn_by)}</strong>` : (card.theme || '')}
+              </span>
+            </div>
+            <span class="admin-status-tag ${isLocked ? 'locked' : 'available'}">
+              ${isLocked ? '✓ USED' : '○ AVAILABLE'}
+            </span>
+          </div>
+          <input
+            id="adminName_${card.card_letter}"
+            type="text"
+            class="admin-input"
+            value="${escapeHtml(card.employee_name || '')}"
+            placeholder="เจ้าของของขวัญในการ์ด ${card.card_letter}"
+          />
+          <div class="admin-mini-actions">
+            <button class="btn-xs" onclick="adminSaveSingleCard('${card.card_letter}', '${card.status}')">
+              💾 บันทึกชื่อ
+            </button>
+            <button class="btn-xs" onclick="adminToggleCardLock('${card.card_letter}', '${isLocked ? 'AVAILABLE' : 'LOCKED'}')">
+              ${isLocked ? '🔓 ปลดล็อก' : '🔒 ล็อกการ์ด'}
+            </button>
+          </div>
+        `;
+        grid.appendChild(item);
+      });
+    }
+
+    function adminSaveSingleCard(letter, currentStatus) {
+      const inputEl = document.getElementById(`adminName_${letter}`);
+      const newName = inputEl ? inputEl.value.trim() : '';
+      if (!newName) {
+        showToast('กรุณาระบุชื่อเจ้าของของขวัญ');
+        return;
+      }
+
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.ok) {
+              if (res.chain) chainState = res.chain;
+              renderAdminDashboard(res.cards);
+              fetchPublicCards();
+              showToast(`บันทึกชื่อการ์ด ${letter} เรียบร้อย`);
+            }
+          })
+          .adminUpdateCard(adminPasswordCache, letter, newName, currentStatus);
+      } else {
+        localFallbackMapping[letter] = newName;
+        refreshAdminDashboard();
+        showToast(`บันทึกชื่อการ์ด ${letter} เรียบร้อย`);
+      }
+    }
+
+    function adminToggleCardLock(letter, targetStatus) {
+      const inputEl = document.getElementById(`adminName_${letter}`);
+      const currentName = inputEl ? inputEl.value.trim() : null;
+
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.ok) {
+              if (res.chain) chainState = res.chain;
+              renderAdminDashboard(res.cards);
+              fetchPublicCards();
+              showToast(`อัปเดตสถานะการ์ด ${letter} เป็น ${targetStatus}`);
+            }
+          })
+          .adminUpdateCard(adminPasswordCache, letter, currentName, targetStatus);
+      } else {
+        if (targetStatus === 'AVAILABLE') {
+          delete localDrawnByMap[letter];
+        } else {
+          localDrawnByMap[letter] = 'Admin';
+        }
+        refreshAdminDashboard();
+        showToast(`อัปเดตสถานะการ์ด ${letter} เป็น ${targetStatus}`);
+      }
+    }
+
+    function adminResetAllConfirm() {
+      if (!confirm('ยืนยันการรีเซ็ตการ์ดทั้ง 14 ใบเป็น AVAILABLE และเริ่มสายโซ่เกมใหม่ทั้งหมด?')) return;
+
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.ok) {
+              if (res.chain) chainState = res.chain;
+              renderAdminDashboard(res.cards);
+              fetchPublicCards();
+              showToast('♻️ รีเซ็ตเกมและการ์ดทั้งหมดเรียบร้อย');
+            }
+          })
+          .adminResetAllCards(adminPasswordCache);
+      } else {
+        localDrawnByMap = {};
+        chainState.usedCount = 0;
+        chainState.isFinished = false;
+        chainState.currentDrawer = chainState.allParticipants[0];
+        chainState.chainStarter = chainState.allParticipants[0];
+        refreshAdminDashboard();
+        fetchPublicCards();
+        showToast('♻️ รีเซ็ตเกมและการ์ดทั้งหมดเรียบร้อย');
+      }
+    }
+
+    function adminShuffleBackend(onlyAvailable) {
+      const msg = onlyAvailable
+        ? 'ต้องการสุ่มสลับรายชื่อเฉพาะการ์ดที่ยังว่างอยู่ (AVAILABLE) ใช่หรือไม่?'
+        : 'ต้องการสุ่มจับคู่รายชื่อใหม่ทั้งหมด 14 ใบ และรีเซ็ตเริ่มเกมใหม่ใช่หรือไม่?';
+      if (!confirm(msg)) return;
+
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.ok) {
+              if (res.chain) chainState = res.chain;
+              renderAdminDashboard(res.cards);
+              fetchPublicCards();
+              showToast('🎲 สุ่มสลับ Mapping รายชื่อบนเซิร์ฟเวอร์เรียบร้อย!');
+            }
+          })
+          .adminShuffleMapping(adminPasswordCache, onlyAvailable);
+      } else {
+        if (!onlyAvailable) localDrawnByMap = {};
+        showToast('🎲 สุ่มสลับรายชื่อเรียบร้อย');
+        refreshAdminDashboard();
+      }
+    }
+
+    function openBulkNamesPrompt() {
+      const currentLines = adminCardsData.map(c => c.employee_name || '').join('\n');
+      document.getElementById('bulkNamesTextarea').value = currentLines;
+      document.getElementById('bulkNamesModal').classList.add('active');
+    }
+
+    function closeBulkNamesModal() {
+      document.getElementById('bulkNamesModal').classList.remove('active');
+    }
+
+    function saveBulkNames() {
+      const raw = document.getElementById('bulkNamesTextarea').value;
+      const lines = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (lines.length === 0) {
+        showToast('กรุณากรอกรายชื่ออย่างน้อย 1 ชื่อ');
+        return;
+      }
+
+      if (isGasEnvironment) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.ok) {
+              if (res.chain) chainState = res.chain;
+              closeBulkNamesModal();
+              renderAdminDashboard(res.cards);
+              fetchPublicCards();
+              showToast('📝 อัปเดตรายชื่อทั้งหมดเรียบร้อย');
+            }
+          })
+          .adminBulkUpdateNames(adminPasswordCache, lines);
+      } else {
+        Object.keys(CARD_THEMES).forEach((ltr, idx) => {
+          if (lines[idx]) localFallbackMapping[ltr] = lines[idx];
+        });
+        chainState.allParticipants = Object.values(localFallbackMapping);
+        closeBulkNamesModal();
+        refreshAdminDashboard();
+        showToast('📝 อัปเดตรายชื่อทั้งหมดเรียบร้อย');
+      }
+    }
+
+    /* ==========================================================
+       11. SNOW & CONFETTI CANVAS EFFECTS
+       ========================================================== */
+    function initSnowParticles() {
+      const canvas = document.getElementById('snowCanvas');
+      const ctx = canvas.getContext('2d');
+      let w = canvas.width = window.innerWidth;
+      let h = canvas.height = window.innerHeight;
+
+      window.addEventListener('resize', () => {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+      });
+
+      const flakes = Array.from({ length: 55 }, () => ({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: Math.random() * 2.2 + 0.8,
+        vy: Math.random() * 0.65 + 0.25,
+        vx: (Math.random() - 0.5) * 0.4,
+        alpha: Math.random() * 0.55 + 0.2,
+        isGoldStar: Math.random() < 0.22
+      }));
+
+      function drawSnow() {
+        ctx.clearRect(0, 0, w, h);
+        flakes.forEach(f => {
+          f.y += f.vy;
+          f.x += f.vx;
+          if (f.y > h) { f.y = -5; f.x = Math.random() * w; }
+          if (f.x > w) f.x = 0;
+          if (f.x < 0) f.x = w;
+
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+          ctx.fillStyle = f.isGoldStar
+            ? `rgba(254, 240, 138, ${f.alpha})`
+            : `rgba(255, 255, 255, ${f.alpha})`;
+          ctx.fill();
+        });
+        requestAnimationFrame(drawSnow);
+      }
+      drawSnow();
+    }
+
+    function launchConfettiCelebration() {
+      const canvas = document.getElementById('confettiCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width = window.innerWidth;
+      const h = canvas.height = window.innerHeight;
+
+      const colors = ['#fef08a', '#f5c451', '#ef4444', '#10b981', '#38bdf8', '#a855f7'];
+      const pieces = Array.from({ length: 90 }, () => ({
+        x: w / 2 + (Math.random() - 0.5) * 140,
+        y: h * 0.45,
+        vx: (Math.random() - 0.5) * 14,
+        vy: -(Math.random() * 12 + 5),
+        size: Math.random() * 7 + 5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rot: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 10,
+        alpha: 1
+      }));
+
+      let frame = 0;
+      function step() {
+        frame++;
+        ctx.clearRect(0, 0, w, h);
+        let active = false;
+        pieces.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.32;
+          p.rot += p.vRot;
+          if (frame > 75) p.alpha -= 0.02;
+          if (p.alpha > 0 && p.y < h + 30) {
+            active = true;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, p.alpha);
+            ctx.translate(p.x, p.y);
+            ctx.rotate((p.rot * Math.PI) / 180);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.65);
+            ctx.restore();
+          }
+        });
+        if (active && frame < 140) {
+          requestAnimationFrame(step);
+        } else {
+          ctx.clearRect(0, 0, w, h);
+        }
+      }
+      step();
+    }
+
+    /* ==========================================================
+       12. UTILITIES
+       ========================================================== */
+    let toastTimer = null;
+    function showToast(msg) {
+      const box = document.getElementById('toastBox');
+      box.textContent = msg;
+      box.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        box.classList.remove('show');
+      }, 3000);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>

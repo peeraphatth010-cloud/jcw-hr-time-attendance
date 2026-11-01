@@ -1,0 +1,154 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// Collection: jcw_hr_attendance
+// Document ID: workspace_main
+// Fields:
+//   - employeeMappings: list (required, max 1000 items) - ID mapping records between fingerprint scanner and employee codes
+//   - quotaRecords: list (required, max 1000 items) - Employee leave entitlement, used, and remaining quota records
+//   - leaveRecords: list (required, max 5000 items) - Online leave form records and approval statuses
+//   - hrOverrides: map (required, max 5000 keys) - Daily HR scan/status override records keyed by employee and date
+//   - settings: map (required, max 30 keys) - Audit engine configuration settings and custom holidays
+//   - updatedAt: string (required, 1..100 chars, ISO 8601 timestamp string) - Last synchronization timestamp
+//
+// Collection: jcw_hr_attendance
+// Document ID: connection_check
+// Fields:
+//   - status: string (required, 1..100 chars) - Connection health check status
+//   - checkedAt: string (required, 1..100 chars, ISO 8601 timestamp string) - Connection check timestamp
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user owns the resource (for user-owned documents)
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check if user is owner based on document's uid field
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    // Verify UID hasn't been tampered with on create
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate that the document contains only the allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate string length
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate that a list is a list and enforces size limits
+    function isValidList(listData, maxSize) {
+      return listData is list && listData.size() <= maxSize;
+    }
+
+    // Validate that a map is a map and enforces key count limits
+    function isValidBoundedMap(mapData, maxKeys) {
+      return mapData is map && mapData.keys().size() <= maxKeys;
+    }
+
+    // Validate ISO 8601 date string format
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.size() >= 10 &&
+        dateStr.size() <= 100 &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}.*");
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in both create and update)
+    // ===============================================================
+
+    function isValidWorkspaceMain(data) {
+      let allowedFields = [
+        'employeeMappings',
+        'quotaRecords',
+        'leaveRecords',
+        'hrOverrides',
+        'settings',
+        'updatedAt'
+      ];
+      return hasRequiredFields(allowedFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidList(data.employeeMappings, 1000) &&
+        isValidList(data.quotaRecords, 1000) &&
+        isValidList(data.leaveRecords, 5000) &&
+        isValidBoundedMap(data.hrOverrides, 5000) &&
+        isValidBoundedMap(data.settings, 30) &&
+        validStringLength('updatedAt', 1, 100) &&
+        isValidDateString(data.updatedAt);
+    }
+
+    function isValidConnectionCheck(data) {
+      let allowedFields = ['status', 'checkedAt'];
+      return hasRequiredFields(allowedFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        validStringLength('status', 1, 100) &&
+        validStringLength('checkedAt', 1, 100) &&
+        isValidDateString(data.checkedAt);
+    }
+
+    // ===============================================================
+    // Collection & Document Rules
+    // ===============================================================
+
+    // Single-workspace HR state document (explicitly unauthenticated internal tool per user request)
+    match /jcw_hr_attendance/workspace_main {
+      allow get, list: if true;
+      allow create: if isValidWorkspaceMain(request.resource.data);
+      allow update: if isValidWorkspaceMain(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Connection health check document
+    match /jcw_hr_attendance/connection_check {
+      allow get, list: if true;
+      allow create: if isValidConnectionCheck(request.resource.data);
+      allow update: if isValidConnectionCheck(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Default deny all other collections and documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
